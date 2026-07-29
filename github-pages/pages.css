@@ -1,0 +1,6 @@
+:root {
+  --font-noto-sans-sc: -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --font-noto-serif-sc: "Songti SC", "Noto Serif CJK SC", serif;
+  --font-geist-mono: "SFMono-Regular", Consolas, monospace;
+}
