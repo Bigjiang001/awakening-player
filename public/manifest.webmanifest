@@ -1,0 +1,40 @@
+{
+  "name": "觉醒玩家",
+  "short_name": "觉醒玩家",
+  "description": "让真实行动被看见的现实人生游戏。",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#081110",
+  "theme_color": "#081110",
+  "lang": "zh-CN",
+  "orientation": "portrait-primary",
+  "categories": ["productivity", "lifestyle"],
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "开始行动",
+      "short_name": "开始行动",
+      "url": "./?tab=quests"
+    },
+    {
+      "name": "查看成长",
+      "short_name": "查看成长",
+      "url": "./?tab=growth"
+    }
+  ]
+}
