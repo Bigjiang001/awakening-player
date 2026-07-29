@@ -70,6 +70,26 @@ test("provides a moderated shared-task community", async () => {
   assert.match(migration, /觉醒策展人/);
 });
 
+test("ships richer real-world quests, rewards, and a phone-safe calendar", async () => {
+  const [page, catalog, css] = await Promise.all([
+    readFile(file("app/page.tsx"), "utf8"),
+    readFile(file("src/data/game-data.ts"), "utf8"),
+    readFile(file("app/globals.css"), "utf8"),
+  ]);
+
+  assert.doesNotMatch(page, /年轻人热门/);
+  assert.match(page, /label:\s*"热门"/);
+  assert.match(catalog, /核实三条 AI 给出的答案/);
+  assert.match(catalog, /参加一次线下兴趣活动/);
+  assert.match(catalog, /做一个能被使用的小工具/);
+  assert.match(catalog, /完成一次英文实时交流/);
+  assert.match(catalog, /制作一枚现实成长纪念物/);
+  assert.match(page, /今日奖励签/);
+  assert.match(page, /换签不扣行动点/);
+  assert.match(css, /grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /\.action-calendar[\s\S]*?max-width:\s*100%/);
+});
+
 test("builds a GitHub Pages local-first phone edition", async () => {
   const [sourceHtml, renderedHtml, page, workflow, config] = await Promise.all([
     readFile(file("github-pages/index.html"), "utf8"),
