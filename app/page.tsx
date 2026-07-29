@@ -230,7 +230,7 @@ const TASK_PACKS: Array<{
   mark: string;
   description: string;
 }> = [
-  { id: "popular", label: "年轻人热门", mark: "燃", description: "想做，就从今天开始" },
+  { id: "popular", label: "热门", mark: "燃", description: "大家正在真实行动" },
   { id: "fat-loss", label: "轻盈减脂", mark: "轻", description: "不挨饿，不惩罚身体" },
   { id: "english", label: "英语开口", mark: "说", description: "从会看走向敢说" },
   { id: "courage", label: "勇气破界", mark: "勇", description: "想做却不敢做的事" },
@@ -2097,6 +2097,7 @@ function RewardVault({
   const [description, setDescription] = useState("");
   const [cost, setCost] = useState(50);
   const [limit, setLimit] = useState(1);
+  const [drawnRewardId, setDrawnRewardId] = useState("");
 
   const startOfWeek = new Date();
   startOfWeek.setHours(0, 0, 0, 0);
@@ -2110,6 +2111,36 @@ function RewardVault({
         redemption.rewardId === rewardId &&
         new Date(redemption.redeemedAt) >= startOfWeek,
     ).length;
+  const orderedRewards = useMemo(
+    () => [...state.realRewards].sort((left, right) => left.pointCost - right.pointCost),
+    [state.realRewards],
+  );
+  const drawableRewards = orderedRewards.filter(
+    (reward) => weeklyCount(reward.id) < reward.weeklyLimit,
+  );
+  const featuredReward =
+    orderedRewards.find((reward) => reward.id === drawnRewardId) ??
+    drawableRewards[0] ??
+    orderedRewards[0];
+  const featuredRedeemed = featuredReward ? weeklyCount(featuredReward.id) : 0;
+  const featuredLimitReached = featuredReward
+    ? featuredRedeemed >= featuredReward.weeklyLimit
+    : false;
+  const featuredCanAfford = featuredReward
+    ? (state.profile?.actionPoints ?? 0) >= featuredReward.pointCost
+    : false;
+  const drawReward = () => {
+    if (drawableRewards.length === 0) return;
+    const currentIndex = drawableRewards.findIndex(
+      (reward) => reward.id === featuredReward?.id,
+    );
+    const step =
+      drawableRewards.length === 1
+        ? 0
+        : 1 + Math.floor(Math.random() * (drawableRewards.length - 1));
+    const nextIndex = (Math.max(0, currentIndex) + step) % drawableRewards.length;
+    setDrawnRewardId(drawableRewards[nextIndex].id);
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -2142,8 +2173,35 @@ function RewardVault({
         <div><small>可用行动点</small><strong>{state.profile?.actionPoints ?? 0}</strong></div>
         <p>只能由正式完成的现实行动获得</p>
       </div>
+      {featuredReward && (
+        <div className="reward-draw">
+          <span className="reward-draw__seal" aria-hidden>{featuredReward.mark}</span>
+          <div className="reward-draw__copy">
+            <small>今日奖励签</small>
+            <strong>{featuredReward.name}</strong>
+            <p>{featuredReward.description}</p>
+            <span>{featuredReward.pointCost} 行动点 · 本周 {featuredRedeemed}/{featuredReward.weeklyLimit}</span>
+          </div>
+          <div className="reward-draw__actions">
+            <button type="button" onClick={drawReward}>换一张</button>
+            <button
+              className="reward-draw__redeem"
+              type="button"
+              disabled={!featuredCanAfford || featuredLimitReached}
+              onClick={() => onRedeem(featuredReward)}
+            >
+              {featuredLimitReached
+                ? "本周已兑"
+                : featuredCanAfford
+                  ? "兑现奖励"
+                  : `还差 ${featuredReward.pointCost - (state.profile?.actionPoints ?? 0)} 点`}
+            </button>
+          </div>
+          <p className="reward-draw__hint">换签不扣行动点；只有真正兑现时才会扣除。</p>
+        </div>
+      )}
       <div className="real-reward-list">
-        {state.realRewards.map((reward) => {
+        {orderedRewards.map((reward) => {
           const redeemed = weeklyCount(reward.id);
           const limitReached = redeemed >= reward.weeklyLimit;
           const canAfford = (state.profile?.actionPoints ?? 0) >= reward.pointCost;
