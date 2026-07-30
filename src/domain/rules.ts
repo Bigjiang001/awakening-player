@@ -34,9 +34,13 @@ export const recoveryElapsedSeconds = (
 
 export const canCompleteSession = (
   session: TaskSession,
+): boolean => session.status === "active";
+
+export const hasReachedSessionReference = (
+  session: TaskSession,
   now = Date.now(),
 ): boolean =>
-  session.status === "active" &&
+  session.timingMode === "result" ||
   elapsedSeconds(session, now) >= session.plannedMinutes * 60;
 
 export const formatDuration = (seconds: number, showHours = true) => {
@@ -71,7 +75,7 @@ export const localDateKey = (value: Date | string | number = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
-export const isRestartQuest = (quest: Quest) =>
+export const isRestartQuest = (quest: Pick<Quest, "id">) =>
   quest.id.startsWith("restart-");
 
 export const isCourageQuest = (quest: Quest) =>
@@ -79,6 +83,13 @@ export const isCourageQuest = (quest: Quest) =>
 
 export const isBossQuest = (quest: Quest) =>
   quest.id.startsWith("boss-");
+
+export const questUsesReferenceTime = (
+  quest: Pick<Quest, "id" | "domain">,
+) =>
+  isRestartQuest(quest) ||
+  quest.domain === "learning" ||
+  quest.domain === "fitness";
 
 export const questCompletionCount = (state: GameState, questId: string) =>
   state.sessions.filter(
