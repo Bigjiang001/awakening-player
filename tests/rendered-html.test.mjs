@@ -90,6 +90,33 @@ test("ships richer real-world quests, rewards, and a phone-safe calendar", async
   assert.match(css, /\.action-calendar[\s\S]*?max-width:\s*100%/);
 });
 
+test("keeps task launch simple and lets real completion beat the clock", async () => {
+  const [page, rules, types, storage, css] = await Promise.all([
+    readFile(file("app/page.tsx"), "utf8"),
+    readFile(file("src/domain/rules.ts"), "utf8"),
+    readFile(file("src/domain/types.ts"), "utf8"),
+    readFile(file("src/storage/db.ts"), "utf8"),
+    readFile(file("app/globals.css"), "utf8"),
+  ]);
+
+  assert.doesNotMatch(page, /行动触发器/);
+  assert.doesNotMatch(page, /把下一次行动加入系统日历/);
+  assert.doesNotMatch(types, /ActionTrigger/);
+  assert.doesNotMatch(storage, /actionTriggers:\s*\[\]/);
+  assert.match(storage, /delete stateWithoutLegacyTriggers\.actionTriggers/);
+  assert.doesNotMatch(css, /\.trigger-plan/);
+  assert.match(page, /value=\{minutesInput\}/);
+  assert.match(page, /setMinutesInput\(event\.target\.value\)/);
+  assert.match(page, /可以先完全清空再输入 1–180 分钟/);
+  assert.match(page, /已完成，记录成果/);
+  assert.match(page, /即使还没到参考时间，也可以现在记录/);
+  assert.match(types, /timingMode\?:\s*"timed"\s*\|\s*"result"/);
+  assert.match(rules, /session\.status === "active"/);
+  assert.match(rules, /quest\.domain === "learning"/);
+  assert.match(rules, /quest\.domain === "fitness"/);
+  assert.match(page, /"timed"\s*:\s*"result"/);
+});
+
 test("builds a GitHub Pages local-first phone edition", async () => {
   const [sourceHtml, renderedHtml, page, workflow, config] = await Promise.all([
     readFile(file("github-pages/index.html"), "utf8"),
