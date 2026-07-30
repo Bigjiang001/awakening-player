@@ -67,6 +67,7 @@ export type TaskSession = {
   startedAt: string;
   completedAt?: string;
   plannedMinutes: number;
+  timingMode?: "timed" | "result";
   finalDurationSeconds?: number;
   firstStep?: string;
 };
@@ -174,15 +175,6 @@ export type ActionContext = {
   updatedAt: string;
 };
 
-export type ActionTrigger = {
-  id: string;
-  questId: string;
-  when: string;
-  where: string;
-  plannedAt?: string;
-  createdAt: string;
-};
-
 export type ProductMetrics = {
   launches: number;
   recommendationStarts: number;
@@ -234,7 +226,6 @@ export type GameState = {
   courageLadders: CourageLadder[];
   campaigns: LifeCampaign[];
   actionContext: ActionContext;
-  actionTriggers: ActionTrigger[];
   metrics: ProductMetrics;
   lastModifiedAt: string;
   settings: PlayerSettings;
