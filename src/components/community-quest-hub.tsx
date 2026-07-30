@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DOMAIN_META } from "../data/game-data";
+import { questUsesReferenceTime } from "../domain/rules";
 import type { CommunityQuest, GameState } from "../domain/types";
 
 export function CommunityQuestHub({
@@ -99,7 +100,11 @@ export function CommunityQuestHub({
                 <h3>{quest.title}</h3>
                 <p>{quest.description}</p>
                 <div className="community-quest__stats">
-                  <span>◷ {quest.plannedMinutes} 分钟</span>
+                  <span>
+                    {questUsesReferenceTime(quest)
+                      ? `◷ ${quest.plannedMinutes} 分钟参考`
+                      : "✓ 按现实结果完成"}
+                  </span>
                   <span>{quest.adoptedCount} 人加入</span>
                   <span>{quest.completedCount} 人完成</span>
                 </div>
