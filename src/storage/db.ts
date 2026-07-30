@@ -36,7 +36,6 @@ export const createEmptyState = (): GameState => ({
     place: "home",
     updatedAt: "1970-01-01T00:00:00.000Z",
   },
-  actionTriggers: [],
   metrics: {
     launches: 0,
     recommendationStarts: 0,
@@ -50,6 +49,10 @@ export const createEmptyState = (): GameState => ({
 });
 
 export const normalizeGame = (state: GameState): GameState => {
+  const stateWithoutLegacyTriggers = {
+    ...state,
+  } as GameState & { actionTriggers?: unknown };
+  delete stateWithoutLegacyTriggers.actionTriggers;
   const knownIds = new Set((state.quests ?? []).map((quest) => quest.id));
   const catalog = [...DEFAULT_QUESTS, ...RESTART_QUESTS];
   const catalogById = new Map(catalog.map((quest) => [quest.id, quest]));
@@ -78,7 +81,7 @@ export const normalizeGame = (state: GameState): GameState => {
   ];
   const normalized: GameState = {
     ...createEmptyState(),
-    ...state,
+    ...stateWithoutLegacyTriggers,
     quests: mergedQuests,
     sessions: state.sessions ?? [],
     memories: (state.memories ?? []).map((memory) => {
@@ -96,7 +99,6 @@ export const normalizeGame = (state: GameState): GameState => {
     courageLadders: state.courageLadders ?? [],
     campaigns: state.campaigns ?? [],
     actionContext: state.actionContext ?? createEmptyState().actionContext,
-    actionTriggers: state.actionTriggers ?? [],
     metrics: state.metrics ?? createEmptyState().metrics,
     lastModifiedAt:
       state.lastModifiedAt ??
@@ -226,7 +228,10 @@ export const validateBackup = (value: unknown): value is GameState => {
       typeof session.questId === "string" &&
       ["active", "abandoned", "completed"].includes(session.status) &&
       typeof session.startedAt === "string" &&
-      typeof session.plannedMinutes === "number",
+      typeof session.plannedMinutes === "number" &&
+      (session.timingMode === undefined ||
+        session.timingMode === "timed" ||
+        session.timingMode === "result"),
   );
 };
 
