@@ -2203,6 +2203,10 @@ button:disabled {
   width: 4.3rem;
 }
 
+.launch-duration input[aria-invalid="true"] {
+  border-color: rgba(231, 126, 116, 0.62);
+}
+
 .launch-duration__fixed {
   color: var(--jade-bright);
   flex: 0 0 auto;
@@ -2414,6 +2418,11 @@ button:disabled {
   filter: drop-shadow(0 0 1.7rem rgba(103, 216, 160, 0.18));
 }
 
+.timer-orb.result-orb {
+  background:
+    conic-gradient(rgba(104, 209, 158, 0.78) 360deg, rgba(88, 122, 108, 0.12) 0);
+}
+
 .timer-orb__inner {
   align-items: center;
   background:
@@ -2494,6 +2503,15 @@ button:disabled {
 .focus-screen > .primary-button {
   margin-inline: auto;
   max-width: 28rem;
+}
+
+.completion-availability {
+  color: var(--jade);
+  font-size: 0.59rem;
+  line-height: 1.55;
+  margin: 0.55rem auto 0;
+  max-width: 28rem;
+  text-align: center;
 }
 
 .text-danger,
@@ -4318,60 +4336,6 @@ button:disabled {
 .campaign-template-list > button > span {
   color: var(--gold);
   font-size: 0.52rem;
-}
-
-.trigger-plan {
-  background: rgba(15, 31, 26, 0.62);
-  border: 1px solid var(--line);
-  border-radius: 0.85rem;
-  margin-top: 0.8rem;
-  padding: 0.75rem;
-}
-
-.trigger-plan > div:first-child > span {
-  display: block;
-  font-size: 0.65rem;
-}
-
-.trigger-plan > div:first-child > small {
-  color: var(--muted-2);
-  display: block;
-  font-size: 0.52rem;
-  margin-top: 0.15rem;
-}
-
-.trigger-plan > div:last-child {
-  display: grid;
-  gap: 0.45rem;
-  grid-template-columns: 1fr 1fr;
-  margin-top: 0.6rem;
-}
-
-.trigger-plan label span {
-  color: var(--gold);
-  display: block;
-  font-size: 0.5rem;
-  margin-bottom: 0.25rem;
-}
-
-.trigger-plan input {
-  background: rgba(4, 13, 10, 0.55);
-  border: 1px solid rgba(143, 194, 169, 0.15);
-  border-radius: 0.58rem;
-  color: var(--ink);
-  font-size: 0.7rem;
-  min-height: 2.65rem;
-  padding: 0 0.6rem;
-  width: 100%;
-}
-
-.trigger-calendar {
-  display: block;
-  margin-top: 0.55rem;
-}
-
-.trigger-calendar input {
-  margin-top: 0.3rem;
 }
 
 .reward-goal-progress {
