@@ -42,6 +42,7 @@ import {
   getGrowthStage,
   getQuest,
   getUnlockedNodeCount,
+  hasReachedSessionReference,
   isNodeUnlocked,
   isBossQuest,
   isCourageQuest,
@@ -51,6 +52,7 @@ import {
   masteryPointBonus,
   questCompletionCount,
   questMastery,
+  questUsesReferenceTime,
   recoveryElapsedSeconds,
   recoveryReadiness,
   reconcileProgress,
@@ -446,6 +448,7 @@ function QuestCard({
 }) {
   const meta = DOMAIN_META[quest.domain];
   const mastery = questMastery(state, quest.id);
+  const usesReferenceTime = questUsesReferenceTime(quest);
   const displayMinutes = isRestartQuest(quest)
     ? quest.plannedMinutes
     : state.launchMinutes[quest.id] ?? quest.plannedMinutes;
@@ -473,8 +476,8 @@ function QuestCard({
       </div>
       <div className="quest-card__bottom">
         <span className="time-chip">
-          <i aria-hidden>◷</i>
-          {displayMinutes} 分钟
+          <i aria-hidden>{usesReferenceTime ? "◷" : "✓"}</i>
+          {usesReferenceTime ? `${displayMinutes} 分钟参考` : "按结果完成"}
         </span>
         <button type="button" onClick={() => onStart(quest)}>
           开始行动
@@ -720,7 +723,9 @@ function HomeScreen({
                 <i aria-hidden>
                   {completed
                     ? "已完成"
-                    : `${state.launchMinutes[quest.id] ?? quest.plannedMinutes} 分钟 →`}
+                    : questUsesReferenceTime(quest)
+                      ? `${state.launchMinutes[quest.id] ?? quest.plannedMinutes} 分钟参考 →`
+                      : "完成现实目标 →"}
                 </i>
               </button>
             ))}
@@ -986,7 +991,7 @@ function QuestScreen({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [domain, setDomain] = useState<Domain>("learning");
-  const [minutes, setMinutes] = useState(15);
+  const [minutesInput, setMinutesInput] = useState("15");
   const [challenge, setChallenge] = useState(false);
   const [shareCommunity, setShareCommunity] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -1021,13 +1026,26 @@ function QuestScreen({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!title.trim() || minutes < 1) return;
+    const usesReferenceTime = questUsesReferenceTime({
+      id: "custom-preview",
+      domain,
+    });
+    const parsedMinutes = Number(minutesInput);
+    if (
+      !title.trim() ||
+      (usesReferenceTime &&
+        (!Number.isFinite(parsedMinutes) ||
+          parsedMinutes < 1 ||
+          parsedMinutes > 480))
+    ) {
+      return;
+    }
     const createdQuest: Quest = {
       id: createId("quest"),
       title: title.trim(),
       description: description.trim() || "由你定义的现实行动。",
       domain,
-      plannedMinutes: minutes,
+      plannedMinutes: usesReferenceTime ? parsedMinutes : 15,
       difficulty: challenge ? "challenge" : "normal",
       isCustom: true,
     };
@@ -1045,7 +1063,7 @@ function QuestScreen({
     }
     setTitle("");
     setDescription("");
-    setMinutes(15);
+    setMinutesInput("15");
     setChallenge(false);
     setShareCommunity(false);
     setShowCreator(false);
@@ -1223,7 +1241,7 @@ function QuestScreen({
                 <span>现实目标</span>
                 <textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={100} placeholder="完成到什么程度？" rows={3} />
               </label>
-              <div className="form-split">
+              <div className={questUsesReferenceTime({ id: "custom-preview", domain }) ? "form-split" : ""}>
                 <label className="field">
                   <span>所属领域</span>
                   <select value={domain} onChange={(event) => setDomain(event.target.value as Domain)}>
@@ -1232,10 +1250,20 @@ function QuestScreen({
                     ))}
                   </select>
                 </label>
-                <label className="field">
-                  <span>参考时长</span>
-                  <input type="number" inputMode="numeric" min={1} max={480} value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} />
-                </label>
+                {questUsesReferenceTime({ id: "custom-preview", domain }) && (
+                  <label className="field">
+                    <span>参考时长</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={480}
+                      value={minutesInput}
+                      onChange={(event) => setMinutesInput(event.target.value)}
+                      placeholder="输入分钟"
+                    />
+                  </label>
+                )}
               </div>
               <label className="switch-row">
                 <span>
@@ -1321,21 +1349,27 @@ function QuestLaunchSheet({
     quest: Quest,
     firstStep: string,
     minutes: number,
-    trigger?: { when: string; where: string; plannedAt?: string },
   ) => void;
 }) {
   const restart = isRestartQuest(quest);
+  const usesReferenceTime = questUsesReferenceTime(quest);
   const [firstStep, setFirstStep] = useState(
     state.launchPlans[quest.id] || suggestedFirstStep(quest),
   );
-  const [minutes, setMinutes] = useState(
-    restart
-      ? quest.plannedMinutes
-      : state.launchMinutes[quest.id] ?? quest.plannedMinutes,
+  const [minutesInput, setMinutesInput] = useState(
+    String(
+      restart
+        ? quest.plannedMinutes
+        : state.launchMinutes[quest.id] ?? quest.plannedMinutes,
+    ),
   );
-  const [triggerWhen, setTriggerWhen] = useState("");
-  const [triggerWhere, setTriggerWhere] = useState("");
-  const [plannedAt, setPlannedAt] = useState("");
+  const parsedMinutes = Number(minutesInput);
+  const validMinutes =
+    !usesReferenceTime ||
+    restart ||
+    (Number.isFinite(parsedMinutes) &&
+      parsedMinutes >= 1 &&
+      parsedMinutes <= 180);
   const mastery = questMastery(state, quest.id);
   const nextProgress = mastery.next
     ? Math.min(100, (mastery.count / mastery.next.minimum) * 100)
@@ -1375,55 +1409,34 @@ function QuestLaunchSheet({
           <small>第一步会带入专注页，但不会单独结算成长。</small>
         </label>
 
-        <div className="launch-duration">
-          <div>
-            <span>{restart ? "重新启动时间" : "本次参考时间"}</span>
-            <small>
-              {restart
-                ? "固定为 5 分钟，让低能量时也容易开始"
-                : "调整后会记住，作为这项任务的个人常用时长"}
-            </small>
+        {usesReferenceTime && (
+          <div className="launch-duration">
+            <div>
+              <span>{restart ? "重新启动时间" : "本次参考时间"}</span>
+              <small>
+                {restart
+                  ? "固定为 5 分钟，让低能量时也容易开始"
+                  : "可以先完全清空再输入 1–180 分钟；参考时间不会锁住完成按钮"}
+              </small>
+            </div>
+            {restart ? (
+              <strong className="launch-duration__fixed">5 分钟</strong>
+            ) : (
+              <label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={180}
+                  value={minutesInput}
+                  onChange={(event) => setMinutesInput(event.target.value)}
+                  placeholder="分钟"
+                  aria-invalid={!validMinutes}
+                />
+                分钟
+              </label>
+            )}
           </div>
-          {restart ? (
-            <strong className="launch-duration__fixed">5 分钟</strong>
-          ) : (
-            <label>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={5}
-                max={180}
-                value={minutes}
-                onChange={(event) =>
-                  setMinutes(Math.max(5, Math.min(180, Number(event.target.value))))
-                }
-              />
-              分钟
-            </label>
-          )}
-        </div>
-
-        {!restart && (
-          <section className="trigger-plan">
-            <div>
-              <span>行动触发器（可选）</span>
-              <small>提前决定何时、何地开始，让目标更容易发生。</small>
-            </div>
-            <div>
-              <label>
-                <span>当我</span>
-                <input value={triggerWhen} onChange={(event) => setTriggerWhen(event.target.value)} maxLength={30} placeholder="例如：晚饭后" />
-              </label>
-              <label>
-                <span>我就在</span>
-                <input value={triggerWhere} onChange={(event) => setTriggerWhere(event.target.value)} maxLength={30} placeholder="例如：书桌前" />
-              </label>
-            </div>
-            <label className="trigger-calendar">
-              <span>把下一次行动加入系统日历（可选）</span>
-              <input type="datetime-local" value={plannedAt} onChange={(event) => setPlannedAt(event.target.value)} />
-            </label>
-          </section>
         )}
 
         {!restart && (
@@ -1445,15 +1458,12 @@ function QuestLaunchSheet({
         <button
           className="primary-button primary-button--large"
           type="button"
-          disabled={!firstStep.trim()}
+          disabled={!firstStep.trim() || !validMinutes}
           onClick={() =>
             onBegin(
               quest,
               firstStep.trim(),
-              minutes,
-              triggerWhen.trim() || triggerWhere.trim() || plannedAt
-                ? { when: triggerWhen.trim(), where: triggerWhere.trim(), plannedAt: plannedAt || undefined }
-                : undefined,
+              usesReferenceTime ? (restart ? quest.plannedMinutes : parsedMinutes) : quest.plannedMinutes,
             )
           }
         >
@@ -1633,9 +1643,16 @@ function FocusScreen({
   const quest = getQuest(state, session.questId);
   if (!quest) return <EmptyFocus onPick={onPick} />;
 
+  const usesReferenceTime =
+    session.timingMode === "timed" ||
+    (session.timingMode === undefined && questUsesReferenceTime(quest));
   const targetSeconds = session.plannedMinutes * 60;
-  const reached = canCompleteSession(session);
-  const progress = Math.min(1, elapsed / targetSeconds);
+  const reached = usesReferenceTime
+    ? hasReachedSessionReference(session)
+    : true;
+  const progress = usesReferenceTime
+    ? Math.min(1, elapsed / targetSeconds)
+    : 1;
   const remaining = Math.max(0, targetSeconds - elapsed);
   const timerStyle = { "--timer-progress": `${progress * 360}deg` } as CSSProperties;
 
@@ -1669,30 +1686,47 @@ function FocusScreen({
         </section>
       )}
 
-      <div className={`timer-orb ${reached ? "is-reached" : ""}`} style={timerStyle}>
+      <div className={`timer-orb ${reached ? "is-reached" : ""} ${usesReferenceTime ? "" : "result-orb"}`} style={timerStyle}>
         <div className="timer-orb__inner">
-          <p>实际行动</p>
+          <p>{usesReferenceTime ? "实际行动" : "行动记录"}</p>
           <strong>{formatDuration(elapsed)}</strong>
-          <span>{reached ? "已达到参考时间" : `距离参考时间 ${formatDuration(remaining, false)}`}</span>
+          <span>
+            {usesReferenceTime
+              ? reached
+                ? "已达到参考时间"
+                : `距离参考时间 ${formatDuration(remaining, false)}`
+              : "完成现实目标后，随时可以记录"}
+          </span>
         </div>
       </div>
 
       <div className="focus-target">
         <div>
-          <span>参考目标</span>
-          <strong>{session.plannedMinutes} 分钟</strong>
+          <span>{usesReferenceTime ? "参考目标" : "完成标准"}</span>
+          <strong>{usesReferenceTime ? `${session.plannedMinutes} 分钟` : "现实结果"}</strong>
         </div>
         <div>
           <span>当前状态</span>
-          <strong className={reached ? "status-reached" : ""}>{reached ? "可以完成" : "行动中"}</strong>
+          <strong className={reached ? "status-reached" : ""}>
+            {usesReferenceTime
+              ? reached
+                ? "达到参考"
+                : "行动中"
+              : "等待确认"}
+          </strong>
         </div>
       </div>
 
       <blockquote>“不必追赶时间，只需忠实于此刻的行动。”</blockquote>
 
-      <button className="primary-button primary-button--large" type="button" disabled={!reached} onClick={() => setShowComplete(true)}>
-        {reached ? "确认完成" : `行动满 ${session.plannedMinutes} 分钟后可完成`}
+      <button className="primary-button primary-button--large" type="button" onClick={() => setShowComplete(true)}>
+        已完成，记录成果
       </button>
+      {usesReferenceTime && !reached && (
+        <p className="completion-availability">
+          已在现实中完成？即使还没到参考时间，也可以现在记录。
+        </p>
+      )}
       <button className="text-danger" type="button" onClick={onAbandon}>放弃本次任务</button>
       <p className="focus-persistence">离开或锁屏后，计时仍按真实时间计算</p>
 
@@ -1712,7 +1746,7 @@ function FocusScreen({
               />
               <span>
                 <strong>我确认现实目标确实发生了</strong>
-                <small>计时达到参考时长，本身不代表任务完成。</small>
+                <small>参考时间只是辅助；现实目标完成，才算真正完成。</small>
               </span>
             </label>
             <label className="memory-photo">
@@ -2928,37 +2962,8 @@ export default function Home() {
     quest: Quest,
     firstStep: string,
     plannedMinutes: number,
-    trigger?: { when: string; where: string; plannedAt?: string },
   ) => {
-    if (trigger?.plannedAt) {
-      const start = new Date(trigger.plannedAt);
-      const end = new Date(start.getTime() + plannedMinutes * 60_000);
-      const toCalendarTime = (date: Date) =>
-        date.toISOString().replaceAll("-", "").replaceAll(":", "").replace(".000", "");
-      const escapeCalendar = (value: string) =>
-        value.replaceAll("\\", "\\\\").replaceAll(",", "\\,").replaceAll("\n", "\\n");
-      const calendar = [
-        "BEGIN:VCALENDAR",
-        "VERSION:2.0",
-        "PRODID:-//Awakening Player//ZH-CN",
-        "BEGIN:VEVENT",
-        `UID:${createId("calendar")}@awakening-player`,
-        `DTSTAMP:${toCalendarTime(new Date())}`,
-        `DTSTART:${toCalendarTime(start)}`,
-        `DTEND:${toCalendarTime(end)}`,
-        `SUMMARY:${escapeCalendar(`觉醒玩家：${quest.title}`)}`,
-        `DESCRIPTION:${escapeCalendar(`现实第一步：${firstStep}`)}`,
-        "END:VEVENT",
-        "END:VCALENDAR",
-      ].join("\r\n");
-      const blob = new Blob([calendar], { type: "text/calendar;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `觉醒玩家-${quest.title}.ics`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    }
+    const usesReferenceTime = questUsesReferenceTime(quest);
     const sessionId = createId("session");
     updateState((current) => ({
       ...current,
@@ -2967,7 +2972,7 @@ export default function Home() {
         ...current.launchPlans,
         [quest.id]: firstStep,
       },
-      launchMinutes: isRestartQuest(quest)
+      launchMinutes: isRestartQuest(quest) || !usesReferenceTime
         ? current.launchMinutes
         : {
             ...current.launchMinutes,
@@ -2981,22 +2986,10 @@ export default function Home() {
           status: "active",
           startedAt: new Date().toISOString(),
           plannedMinutes,
+          timingMode: usesReferenceTime ? "timed" : "result",
           firstStep,
         },
       ],
-      actionTriggers: trigger
-        ? [
-            ...current.actionTriggers,
-            {
-              id: createId("trigger"),
-              questId: quest.id,
-              when: trigger.when,
-              where: trigger.where,
-              plannedAt: trigger.plannedAt,
-              createdAt: new Date().toISOString(),
-            },
-          ]
-        : current.actionTriggers,
     }));
     setPendingQuest(null);
     setNow(Date.now());
@@ -3020,7 +3013,7 @@ export default function Home() {
   const finishQuest = async (note: string, photo?: File) => {
     const session = state.sessions.find((item) => item.id === state.activeSessionId);
     if (!session || session.status !== "active" || !canCompleteSession(session)) {
-      notify("尚未达到计划时间");
+      notify("当前没有可完成的任务");
       return;
     }
     const quest = getQuest(state, session.questId);
