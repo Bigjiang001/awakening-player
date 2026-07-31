@@ -130,16 +130,51 @@ test("builds a GitHub Pages local-first phone edition", async () => {
   assert.match(sourceHtml, /href="\.\/manifest\.webmanifest"/);
   assert.match(renderedHtml, /src="\.\/assets\//);
   assert.match(renderedHtml, /href="\.\/assets\//);
-  assert.match(page, /手机本地存档已开启/);
-  assert.match(page, /GitHub 本机版 V3\.1/);
+  assert.match(page, /手机本地存档/);
+  assert.match(page, /V0\.0\.2 Real Life RPG/);
   assert.match(page, /if \(localOnly\) return false/);
   assert.doesNotMatch(page, /此刻行动推荐/);
   assert.doesNotMatch(page, /告诉我你现在的状态/);
-  assert.match(page, /home-quest-swiper/);
-  assert.match(page, /onPointerDown=\{rememberSwipeStart\}/);
-  assert.match(page, /向右滑换一个/);
+  assert.doesNotMatch(page, /home-quest-swiper/);
+  assert.match(page, /今日主线/);
+  assert.match(page, /今日支线/);
+  assert.match(page, /今日奇遇/);
+  assert.match(page, /本周现实 Boss/);
   assert.match(page, /day\.count > 9 \? "9\+" : day\.count/);
   assert.match(config, /base:\s*"\.\/"/);
   assert.match(workflow, /actions\/upload-pages-artifact@v4/);
   assert.match(workflow, /actions\/deploy-pages@v4/);
+});
+
+test("ships the V0.0.2 real-life RPG loop", async () => {
+  const [page, rules, types, data, css, packageText] = await Promise.all([
+    readFile(file("app/page.tsx"), "utf8"),
+    readFile(file("src/domain/rules.ts"), "utf8"),
+    readFile(file("src/domain/types.ts"), "utf8"),
+    readFile(file("src/data/game-data.ts"), "utf8"),
+    readFile(file("app/globals.css"), "utf8"),
+    readFile(file("package.json"), "utf8"),
+  ]);
+
+  assert.match(page, /从今天开始，把现实，当作你真正的人生 RPG/);
+  assert.doesNotMatch(page, /玩家昵称/);
+  assert.match(page, /开启补救任务/);
+  assert.match(page, /今天没有主线任务/);
+  assert.match(page, /LV\.\{profile\.level\}/);
+  assert.match(page, /装备掉落 · 来自真实成长/);
+  assert.match(page, /人生探索地图/);
+  assert.match(page, /五项核心属性/);
+  assert.match(page, /现实奖励/);
+  assert.match(types, /experience:\s*number/);
+  assert.match(types, /bossVictories:\s*BossVictory\[\]/);
+  assert.match(rules, /completionExperienceReward/);
+  assert.match(rules, /weeklyBossProgress/);
+  assert.match(rules, /questUnlockLevel/);
+  assert.match(data, /拖延魔王/);
+  assert.match(data, /疾风战靴/);
+  assert.match(data, /黎明罗盘/);
+  assert.match(css, /equipment-atlas-v002\.jpg/);
+  assert.equal(JSON.parse(packageText).version, "0.0.2");
+  const equipmentAtlas = await stat(file("public/equipment-atlas-v002.jpg"));
+  assert.ok(equipmentAtlas.size > 150_000);
 });

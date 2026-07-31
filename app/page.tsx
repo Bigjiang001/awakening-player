@@ -4,7 +4,6 @@ import {
   type ChangeEvent,
   type CSSProperties,
   type FormEvent,
-  type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
   useRef,
@@ -13,64 +12,63 @@ import {
 import {
   DOMAIN_META,
   DOMAIN_ORDER,
-  GROWTH_NODES,
+  EQUIPMENT_CARDS,
   RECOVERY_ACTIONS,
+  REST_DAY_QUEST_IDS,
 } from "../src/data/game-data";
 import { CommunityQuestHub } from "../src/components/community-quest-hub";
 import {
   actionStreaks,
   activeCourageLadder,
-  activeCampaign,
-  activeExpedition,
   achievementsFor,
   buildDailyPlan,
   canCompleteSession,
   canCompleteRecovery,
   completedRestartToday,
+  completionExperienceReward,
   completionPointReward,
   contextualQuest,
   courageLadderProgress,
   createId,
   dailyPlanFor,
   dailyPlanItems,
+  dailyEncounterFor,
   domainStats,
+  equipmentCollection,
   elapsedSeconds,
-  expeditionProgress,
-  campaignProgress,
   formatDuration,
   formatMinutes,
-  getGrowthStage,
   getQuest,
-  getUnlockedNodeCount,
   hasReachedSessionReference,
-  isNodeUnlocked,
+  isRestDay,
   isBossQuest,
   isCourageQuest,
   isRestartQuest,
   localDateKey,
-  mainlineProgress,
+  levelProgress,
   masteryPointBonus,
   questCompletionCount,
   questMastery,
+  questUnlockLevel,
   questUsesReferenceTime,
   recoveryElapsedSeconds,
   recoveryReadiness,
   reconcileProgress,
   safetyGuidance,
   suggestedFirstStep,
-  suggestedExpeditionDomain,
   suggestedRestartQuest,
+  weekKey,
+  weeklyBossFor,
+  weeklyBossProgress,
   worldStateFor,
 } from "../src/domain/rules";
 import type {
-  CampaignKind,
   CommunityQuest,
   CourageLadder,
   Domain,
+  EquipmentCard,
   GameState,
-  GrowthExpedition,
   GrowthMemory,
-  LifeCampaign,
   Quest,
   QuestTag,
   RealReward,
@@ -92,9 +90,14 @@ type CompletionRewardOutcome = {
   questTitle: string;
   domain: Domain;
   points: number;
+  experience: number;
+  level: number;
+  levelUp: boolean;
   bonusLabels: string[];
   masteryTitle?: string;
   achievements: string[];
+  equipmentUnlocks: EquipmentCard[];
+  bossDefeated?: string;
   totalPoints: number;
 };
 
@@ -122,17 +125,6 @@ type CourageTheme = {
     { title: string; description: string; minutes: number },
     { title: string; description: string; minutes: number },
   ];
-};
-
-type CampaignTemplate = {
-  kind: CampaignKind;
-  title: string;
-  description: string;
-  domain: Domain;
-  targetCount: number;
-  bossTitle: string;
-  bossDescription: string;
-  bossMinutes: number;
 };
 
 const GOALS = [
@@ -251,67 +243,12 @@ const QUEST_TAG_LABELS: Record<QuestTag, string> = {
   seasonal: "本季",
 };
 
-const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
-  {
-    kind: "fitness",
-    title: "轻盈而有力量",
-    description: "用稳定运动、正常饮食和恢复建立可持续体能。",
-    domain: "fitness",
-    targetCount: 18,
-    bossTitle: "完成一次体能远征",
-    bossDescription: "选择安全路线，完成一次能代表当前阶段成果的持续运动。",
-    bossMinutes: 45,
-  },
-  {
-    kind: "english",
-    title: "真正开口说英语",
-    description: "从输入、跟读到真人表达，把英语变成现实能力。",
-    domain: "learning",
-    targetCount: 18,
-    bossTitle: "完成一次英语真实交流",
-    bossDescription: "和真实对象完成一段英语交流，允许停顿，不追求完美。",
-    bossMinutes: 15,
-  },
-  {
-    kind: "career",
-    title: "职业能力升级",
-    description: "完善表达、作品与机会连接，主动靠近下一种可能。",
-    domain: "discipline",
-    targetCount: 15,
-    bossTitle: "投出一份认真申请",
-    bossDescription: "完成一次真实岗位、项目或活动申请，并保留提交结果。",
-    bossMinutes: 30,
-  },
-  {
-    kind: "creation",
-    title: "完成并发布作品",
-    description: "停止等待完美，把持续创作推向一次正式发布。",
-    domain: "creation",
-    targetCount: 15,
-    bossTitle: "正式发布一件作品",
-    bossDescription: "完成基本检查后，把一件作品交给真实世界。",
-    bossMinutes: 30,
-  },
-  {
-    kind: "rhythm",
-    title: "重建生活节奏",
-    description: "从空间、专注和睡眠入口重新掌握自己的生活。",
-    domain: "discipline",
-    targetCount: 14,
-    bossTitle: "完成一次理想日",
-    bossDescription: "按自己定义的节奏完成一段完整现实流程，并留下记录。",
-    bossMinutes: 45,
-  },
-];
-
 const formatDate = (date: string) =>
   new Intl.DateTimeFormat("zh-CN", {
     month: "long",
     day: "numeric",
     weekday: "short",
   }).format(new Date(date));
-
-const todayKey = () => new Date().toDateString();
 
 function AppLogo({ small = false }: { small?: boolean }) {
   return (
@@ -330,6 +267,22 @@ function DomainMark({ domain, compact = false }: { domain: Domain; compact?: boo
   );
 }
 
+function EquipmentArtwork({
+  equipment,
+  locked = false,
+}: {
+  equipment: EquipmentCard;
+  locked?: boolean;
+}) {
+  return (
+    <div
+      className={`equipment-art equipment-art--${equipment.artIndex} ${locked ? "is-locked" : ""}`}
+      role="img"
+      aria-label={locked ? "尚未解锁的装备" : equipment.name}
+    />
+  );
+}
+
 function LoadingScreen() {
   return (
     <main className="loading-screen">
@@ -342,16 +295,10 @@ function LoadingScreen() {
 function Onboarding({
   onCreate,
 }: {
-  onCreate: (nickname: string, mainGoal: string) => void;
+  onCreate: (mainGoal: string) => void;
 }) {
-  const [nickname, setNickname] = useState("");
   const [goal, setGoal] = useState(GOALS[0]);
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const name = nickname.trim();
-    if (name) onCreate(name, goal);
-  };
+  const [step, setStep] = useState<"goal" | "declaration">("goal");
 
   return (
     <main className="onboarding">
@@ -362,55 +309,43 @@ function Onboarding({
           <p className="eyebrow">现实人生游戏化</p>
           <h1>觉醒玩家</h1>
         </div>
-        <p className="onboarding__quote">
-          你不是在培养一个虚拟角色。
-          <br />
-          你正在看见现实中的自己，逐渐觉醒。
-        </p>
+        <p className="onboarding__quote">选择一条现实主线，然后立刻开始。</p>
       </section>
 
-      <form className="onboarding__form" onSubmit={submit}>
-        <div className="step-label">
-          <span>01</span>
-          为这段旅程留下名字
-        </div>
-        <label className="field">
-          <span>玩家昵称</span>
-          <input
-            value={nickname}
-            onChange={(event) => setNickname(event.target.value)}
-            maxLength={16}
-            placeholder="怎么称呼你？"
-            autoComplete="nickname"
-            autoFocus
-          />
-        </label>
-
-        <div className="step-label">
-          <span>02</span>
-          你此刻最想改变什么
-        </div>
-        <div className="goal-grid" role="radiogroup" aria-label="初始成长目标">
-          {GOALS.map((item) => (
-            <button
-              className={`goal-option ${goal === item ? "is-selected" : ""}`}
-              key={item}
-              type="button"
-              role="radio"
-              aria-checked={goal === item}
-              onClick={() => setGoal(item)}
-            >
-              <span>{item}</span>
-              <i aria-hidden>{goal === item ? "●" : "○"}</i>
-            </button>
-          ))}
-        </div>
-        <button className="primary-button primary-button--large" type="submit" disabled={!nickname.trim()}>
-          进入觉醒世界
-          <span aria-hidden>→</span>
-        </button>
-        <p className="privacy-note">所有成长数据仅保存在你的设备中</p>
-      </form>
+      {step === "goal" ? (
+        <section className="onboarding__form">
+          <div className="step-label"><span>01</span>选择你最想推进的人生主线</div>
+          <div className="goal-grid" role="radiogroup" aria-label="初始成长目标">
+            {GOALS.map((item) => (
+              <button
+                className={`goal-option ${goal === item ? "is-selected" : ""}`}
+                key={item}
+                type="button"
+                role="radio"
+                aria-checked={goal === item}
+                onClick={() => setGoal(item)}
+              >
+                <span>{item}</span>
+                <i aria-hidden>{goal === item ? "●" : "○"}</i>
+              </button>
+            ))}
+          </div>
+          <button className="primary-button primary-button--large" type="button" onClick={() => setStep("declaration")}>
+            确认我的主线<span aria-hidden>→</span>
+          </button>
+        </section>
+      ) : (
+        <section className="awakening-declaration">
+          <span aria-hidden>醒</span>
+          <p>欢迎来到觉醒玩家。</p>
+          <h2>从今天开始，把现实，当作你真正的人生 RPG。</h2>
+          <button className="primary-button primary-button--large" type="button" onClick={() => onCreate(goal)}>
+            开始现实行动<span aria-hidden>→</span>
+          </button>
+          <button className="plain-button" type="button" onClick={() => setStep("goal")}>重新选择</button>
+          <p className="privacy-note">成长记录只属于你</p>
+        </section>
+      )}
     </main>
   );
 }
@@ -448,12 +383,14 @@ function QuestCard({
 }) {
   const meta = DOMAIN_META[quest.domain];
   const mastery = questMastery(state, quest.id);
+  const unlockLevel = questUnlockLevel(quest);
+  const locked = (state.profile?.level ?? 1) < unlockLevel;
   const usesReferenceTime = questUsesReferenceTime(quest);
   const displayMinutes = isRestartQuest(quest)
     ? quest.plannedMinutes
     : state.launchMinutes[quest.id] ?? quest.plannedMinutes;
   return (
-    <article className={`quest-card ${featured ? "quest-card--featured" : ""}`}>
+    <article className={`quest-card ${featured ? "quest-card--featured" : ""} ${locked ? "is-locked" : ""}`}>
       <div className="quest-card__top">
         <DomainMark domain={quest.domain} />
         <div className="quest-card__copy">
@@ -477,10 +414,14 @@ function QuestCard({
       <div className="quest-card__bottom">
         <span className="time-chip">
           <i aria-hidden>{usesReferenceTime ? "◷" : "✓"}</i>
-          {usesReferenceTime ? `${displayMinutes} 分钟参考` : "按结果完成"}
+          {locked
+            ? `LV.${unlockLevel} 解锁`
+            : usesReferenceTime
+              ? `${displayMinutes} 分钟参考`
+              : "按结果完成"}
         </span>
-        <button type="button" onClick={() => onStart(quest)}>
-          开始行动
+        <button type="button" disabled={locked} onClick={() => onStart(quest)}>
+          {locked ? "尚未解锁" : "开始行动"}
           <span aria-hidden>→</span>
         </button>
       </div>
@@ -498,10 +439,6 @@ function HomeScreen({
   onNavigate,
   onStart,
   onOpenRecovery,
-  onCreateExpedition,
-  onClaimExpedition,
-  onCreateCampaign,
-  onClaimCampaign,
 }: {
   state: GameState;
   activeQuest?: Quest;
@@ -512,455 +449,208 @@ function HomeScreen({
   onNavigate: (tab: Tab) => void;
   onStart: (quest: Quest) => void;
   onOpenRecovery: () => void;
-  onCreateExpedition: (domain: Domain, targetCount: 3 | 5 | 7) => void;
-  onClaimExpedition: (expedition: GrowthExpedition) => void;
-  onCreateCampaign: (template: CampaignTemplate) => void;
-  onClaimCampaign: (campaign: LifeCampaign) => void;
 }) {
-  const [showExpeditionCreator, setShowExpeditionCreator] = useState(false);
-  const [showCampaignCreator, setShowCampaignCreator] = useState(false);
-  const [expeditionDomain, setExpeditionDomain] = useState<Domain>(
-    suggestedExpeditionDomain(state),
-  );
-  const [expeditionTarget, setExpeditionTarget] = useState<3 | 5 | 7>(3);
+  const [showRemedy, setShowRemedy] = useState(false);
   const profile = state.profile!;
-  const stage = getGrowthStage(state);
-  const baseSuggestion = contextualQuest(state);
-  const suggestions = useMemo(() => {
-    const available = state.quests.filter(
-      (quest) =>
-        !isRestartQuest(quest) &&
-        !isCourageQuest(quest) &&
-        !isBossQuest(quest),
-    );
-    const baseIndex = available.findIndex(
-      (quest) => quest.id === baseSuggestion.id,
-    );
-    const ordered =
-      baseIndex > 0
-        ? [...available.slice(baseIndex), ...available.slice(0, baseIndex)]
-        : available;
-    return ordered.slice(0, 18);
-  }, [baseSuggestion.id, state.quests]);
-  const [suggestionIndex, setSuggestionIndex] = useState(0);
-  const swipeStartX = useRef<number | null>(null);
-  const suggestion =
-    suggestions[suggestionIndex % Math.max(1, suggestions.length)] ??
-    baseSuggestion;
-  const changeSuggestion = (direction: 1 | -1) => {
-    if (suggestions.length < 2) return;
-    setSuggestionIndex((current) =>
-      (current + direction + suggestions.length) % suggestions.length,
-    );
-  };
-  const rememberSwipeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
-    swipeStartX.current = event.clientX;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-  const finishSuggestionSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (swipeStartX.current === null) return;
-    const distance = event.clientX - swipeStartX.current;
-    swipeStartX.current = null;
-    if (distance > 44) changeSuggestion(1);
-    if (distance < -44) changeSuggestion(-1);
-  };
-  const restartQuest = suggestedRestartQuest(state);
-  const restartDone = completedRestartToday(state);
+  const levelState = levelProgress(profile.experience);
+  const timeline = currentTime || new Date(state.lastModifiedAt).getTime();
   const dailyPlan = dailyPlanFor(state);
   const dailyItems = dailyPlan ? dailyPlanItems(state, dailyPlan) : [];
-  const dailyCompleted = dailyItems.filter((item) => item.completed).length;
-  const readiness = recoveryReadiness(state);
-  const mainline = mainlineProgress(state);
-  const campaign = activeCampaign(state);
-  const campaignDone = campaign ? campaignProgress(state, campaign) : 0;
-  const campaignBoss = campaign ? getQuest(state, campaign.bossQuestId) : undefined;
-  const bossComplete = campaign
-    ? questCompletionCount(state, campaign.bossQuestId) > 0
-    : false;
-  const expedition = activeExpedition(state);
-  const expeditionDone = expedition
-    ? expeditionProgress(state, expedition)
-    : 0;
-  const expeditionDaysLeft = expedition
-    ? Math.max(
-        0,
-        Math.ceil(
-          (new Date(expedition.plannedEndAt).getTime() - currentTime) /
-            86_400_000,
-        ),
-      )
-    : 0;
-  const expeditionQuest = expedition
-    ? state.quests.find(
-        (quest) =>
-          quest.domain === expedition.domain &&
-          !isRestartQuest(quest) &&
-          !isCourageQuest(quest),
-      )
-    : undefined;
-  const todayCompleted = state.sessions.filter(
-    (session) =>
-      session.status === "completed" &&
-      session.completedAt &&
-      new Date(session.completedAt).toDateString() === todayKey(),
-  ).length;
-  const nextMilestone = profile.totalCompletions < 3 ? 3 : profile.totalCompletions < 12 ? 12 : 30;
-  const stageProgress = Math.min(100, (profile.totalCompletions / nextMilestone) * 100);
+  const mainQuest = dailyItems[0]?.quest ?? contextualQuest(state);
+  const mainCompleted = dailyItems[0]?.completed ?? false;
+  const sideItems = dailyItems.slice(1);
+  const restDay = isRestDay(timeline);
+  const restQuests = REST_DAY_QUEST_IDS.flatMap((id) => {
+    const quest = getQuest(state, id);
+    return quest ? [quest] : [];
+  });
+  const encounter = dailyEncounterFor(state, timeline);
+  const boss = weeklyBossFor(state, timeline);
+  const bossProgress = weeklyBossProgress(state, boss, timeline);
+  const bossDefeated = state.bossVictories.some(
+    (victory) =>
+      victory.bossId === boss.id &&
+      victory.week === weekKey(timeline),
+  );
+  const remedyQuest = suggestedRestartQuest(state);
+  const remedyDone = completedRestartToday(state);
+  const completedToday = (questId: string) =>
+    state.sessions.some(
+      (session) =>
+        session.questId === questId &&
+        session.status === "completed" &&
+        session.completedAt &&
+        localDateKey(session.completedAt) === localDateKey(),
+    );
+  const timingLabel = (quest: Quest) =>
+    questUsesReferenceTime(quest)
+      ? `${state.launchMinutes[quest.id] ?? quest.plannedMinutes} 分钟参考`
+      : "按现实结果完成";
 
   return (
-    <div className="screen home-screen">
+    <div className="screen home-screen home-screen--v002">
       <ScreenHeader
         eyebrow={formatDate(new Date().toISOString())}
-        title={`早安，${profile.nickname}`}
+        title="今天，去现实里升级"
         trailing={<AppLogo small />}
       />
 
-      <section className="stage-card">
-        <div className="stage-card__halo" aria-hidden />
-        <p className="stage-card__eyebrow">当前成长阶段</p>
-        <div className="stage-card__title">
-          <span className="stage-seal">醒</span>
-          <div>
-            <h2>{stage.name}</h2>
-            <p>{stage.eyebrow}</p>
+      <section className="player-level-strip">
+        <span>LV.{profile.level}</span>
+        <div>
+          <p>玩家等级</p>
+          <div aria-label={`等级经验 ${levelState.current} / ${levelState.required}`}>
+            <i style={{ width: `${levelState.ratio * 100}%` }} />
           </div>
         </div>
-        <div className="stage-progress" aria-label={`阶段进度 ${Math.round(stageProgress)}%`}>
-          <span style={{ width: `${stageProgress}%` }} />
-        </div>
-        <p className="stage-card__hint">{stage.nextHint}</p>
+        <strong>{levelState.current} / 100 EXP</strong>
       </section>
-
-      <div className="home-stats">
-        <div>
-          <strong>{todayCompleted}</strong>
-          <span>今日完成</span>
-        </div>
-        <div>
-          <strong>{profile.totalCompletions}</strong>
-          <span>累计行动</span>
-        </div>
-        <div>
-          <strong>{profile.actionPoints}</strong>
-          <span>可用行动点</span>
-        </div>
-      </div>
 
       {activeQuest || activeRecoveryTitle ? (
         <section className="active-banner" onClick={() => onNavigate("focus")}>
           <div className="active-pulse" aria-hidden />
           <div>
-            <p>{activeQuest ? "行动正在发生" : "恢复正在发生"}</p>
+            <p>{activeQuest ? "现实行动正在发生" : "恢复正在发生"}</p>
             <h3>{activeQuest?.title ?? activeRecoveryTitle}</h3>
           </div>
           <strong>{formatDuration(activeQuest ? activeElapsed : activeRecoveryElapsed)}</strong>
-          <button type="button" aria-label="回到专注页面">→</button>
+          <button type="button" aria-label="回到当前行动">→</button>
+        </section>
+      ) : null}
+
+      {restDay ? (
+        <section className="rest-day-card">
+          <span className="rest-day-card__mark" aria-hidden>息</span>
+          <div>
+            <p>本周休息日</p>
+            <h2>今天没有主线任务</h2>
+            <span>恢复也是成长的一部分。只做让身体和生活重新舒展的轻任务。</span>
+          </div>
+          <button type="button" onClick={onOpenRecovery}>进入恢复营地</button>
         </section>
       ) : (
-        <>
-          <div className="section-heading">
+        <section className={`daily-main-quest ${mainCompleted ? "is-complete" : ""}`}>
+          <div className="daily-mission-heading">
+            <span>今日主线</span>
+            <small>{mainCompleted ? "已完成" : "+30 EXP（含主线奖励）"}</small>
+          </div>
+          <div className="daily-main-quest__body">
+            <DomainMark domain={mainQuest.domain} />
             <div>
-              <p>今日一小步</p>
-              <h2>从此刻开始</h2>
-            </div>
-            <div className="home-suggestion-actions">
-              <button type="button" onClick={() => changeSuggestion(1)}>换一个</button>
-              <button type="button" onClick={() => onNavigate("quests")}>全部任务</button>
+              <h2>{mainQuest.title}</h2>
+              <p>{mainQuest.description}</p>
+              <span>{timingLabel(mainQuest)}</span>
             </div>
           </div>
-          <div
-            className="home-quest-swiper"
-            onPointerDown={rememberSwipeStart}
-            onPointerUp={finishSuggestionSwipe}
-            onPointerCancel={() => {
-              swipeStartX.current = null;
-            }}
+          <button
+            className="primary-button"
+            type="button"
+            disabled={mainCompleted}
+            onClick={() => onStart(mainQuest)}
           >
-            <div className="home-quest-swiper__card" key={suggestion.id}>
-              <QuestCard quest={suggestion} state={state} onStart={onStart} featured />
-            </div>
-            <div className="home-quest-swiper__hint" aria-live="polite">
-              <span aria-hidden>→</span>
-              向右滑换一个 · {suggestionIndex % Math.max(1, suggestions.length) + 1}/{suggestions.length}
-            </div>
-          </div>
-        </>
-      )}
-
-      <section className={`restart-card ${restartDone ? "is-complete" : ""}`}>
-        <div className="restart-card__mark" aria-hidden>{restartDone ? "✓" : "启"}</div>
-        <div>
-          <p>低能量入口 · 每日一次</p>
-          <h2>{restartDone ? "今天已经重新启动" : `${DOMAIN_META[restartQuest.domain].name} · 五分钟重新启动`}</h2>
-          <span>{restartDone ? "不需要继续加码，守住今天真实发生过的一步。" : restartQuest.description}</span>
-        </div>
-        {!restartDone && <button type="button" onClick={() => onStart(restartQuest)}>开始 5 分钟</button>}
-      </section>
-
-      {profile.totalCompletions >= 3 && dailyPlan && (
-        <section className="daily-awakening">
-          <div className="section-heading section-heading--compact">
-            <div>
-              <p>今日觉醒三步</p>
-              <h2>心智 · 身体 · 破界</h2>
-            </div>
-            <span>{dailyCompleted} / 3</span>
-          </div>
-          <div className="daily-awakening__steps">
-            {dailyItems.map(({ pillar, quest, completed }, index) => (
-              <button
-                className={completed ? "is-complete" : ""}
-                key={pillar}
-                type="button"
-                disabled={completed}
-                onClick={() => onStart(quest)}
-              >
-                <span>{completed ? "✓" : index + 1}</span>
-                <div>
-                  <small>{pillar}</small>
-                  <strong>{quest.title}</strong>
-                </div>
-                <i aria-hidden>
-                  {completed
-                    ? "已完成"
-                    : questUsesReferenceTime(quest)
-                      ? `${state.launchMinutes[quest.id] ?? quest.plannedMinutes} 分钟参考 →`
-                      : "完成现实目标 →"}
-                </i>
-              </button>
-            ))}
-          </div>
-          <p className="gentle-rule">漏做不会清零或扣分；当天已完成的匹配行动会直接计入。</p>
+            {mainCompleted ? "主线已完成" : "开始今日主线"}
+            {!mainCompleted && <span aria-hidden>→</span>}
+          </button>
+          {!mainCompleted && !showRemedy && (
+            <button className="daily-remedy-trigger" type="button" onClick={() => setShowRemedy(true)}>
+              今天确实做不了？开启补救任务
+            </button>
+          )}
         </section>
       )}
 
-      <section className={`expedition-card ${expedition && expeditionDone >= expedition.targetCount ? "is-ready" : ""}`}>
-        <div className="expedition-card__head">
+      {!restDay && showRemedy && (
+        <section className={`remedy-card ${remedyDone ? "is-complete" : ""}`}>
+          <span aria-hidden>{remedyDone ? "✓" : "救"}</span>
           <div>
-            <p>七日成长远征</p>
-            <h2>
-              {expedition
-                ? `${DOMAIN_META[expedition.domain].name}能力训练`
-                : "把一次行动，变成连续成长"}
-            </h2>
+            <small>补救任务 · 不让今天彻底中断</small>
+            <h3>{remedyQuest.title}</h3>
+            <p>{remedyQuest.description}</p>
           </div>
-          <span aria-hidden>{expedition ? DOMAIN_META[expedition.domain].mark : "途"}</span>
-        </div>
-        {expedition ? (
-          <>
-            <p className="expedition-card__copy">
-              目标完成 {expedition.targetCount} 次真实行动 ·
-              {expeditionDaysLeft > 0
-                ? ` 计划期还剩 ${expeditionDaysLeft} 天`
-                : " 计划期已过，进度仍保留"}
-            </p>
-            <div className="expedition-progress" aria-label={`远征进度 ${expeditionDone} / ${expedition.targetCount}`}>
-              {Array.from({ length: expedition.targetCount }, (_, index) => (
-                <i className={index < expeditionDone ? "is-complete" : ""} key={index}>
-                  {index < expeditionDone ? "✓" : index + 1}
-                </i>
-              ))}
-            </div>
-            <div className="expedition-card__actions">
-              {expeditionDone >= expedition.targetCount ? (
-                <button type="button" onClick={() => onClaimExpedition(expedition)}>
-                  领取远征奖励 · +15 行动点
-                </button>
-              ) : expeditionQuest ? (
-                <button type="button" onClick={() => onStart(expeditionQuest)}>
-                  继续下一次真实行动
-                </button>
-              ) : (
-                <button type="button" onClick={() => onNavigate("quests")}>选择匹配任务</button>
-              )}
-              <span>{expeditionDone} / {expedition.targetCount}</span>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="expedition-card__copy">
-              选择一个能力方向和可承受节奏。计划本身没有奖励，完成才结算。
-            </p>
-            <button className="expedition-start" type="button" onClick={() => setShowExpeditionCreator(true)}>
-              开始一段七日远征
-              <span aria-hidden>→</span>
-            </button>
-          </>
-        )}
-      </section>
+          <button type="button" disabled={remedyDone} onClick={() => onStart(remedyQuest)}>
+            {remedyDone ? "已补救" : "开始 5 分钟"}
+          </button>
+        </section>
+      )}
 
-      <section className={`campaign-card ${campaign && bossComplete ? "is-ready" : ""}`}>
-        <div className="campaign-card__heading">
-          <div>
-            <p>人生战役 · 长期主线</p>
-            <h2>{campaign?.title ?? "让一个重要目标真正发生"}</h2>
-          </div>
-          <span aria-hidden>章</span>
-        </div>
-        {campaign ? (
-          <>
-            <div className="campaign-chapters">
-              {[0.25, 0.5, 0.75, 1].map((ratio, index) => {
-                const reached = campaignDone >= Math.ceil(campaign.targetCount * ratio);
-                return (
-                  <div className={reached ? "is-complete" : ""} key={ratio}>
-                    <i>{reached ? "✓" : index + 1}</i>
-                    <span>{["启程", "成形", "突破", "决战"][index]}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="campaign-card__progress">
-              已完成 {campaignDone} / {campaign.targetCount} 次
-              {campaignDone >= campaign.targetCount ? " · 最终挑战已解锁" : " · 每次真实行动都在推进章节"}
-            </p>
-            {campaignDone >= campaign.targetCount && campaignBoss && !bossComplete && (
-              <button className="campaign-primary" type="button" onClick={() => onStart(campaignBoss)}>
-                挑战 Boss · {campaignBoss.title}
-              </button>
-            )}
-            {bossComplete && (
-              <button className="campaign-primary" type="button" onClick={() => onClaimCampaign(campaign)}>
-                完成战役 · 领取 60 行动点
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            <p className="campaign-card__copy">选择一个真正重要的目标，系统会生成章节和最终 Boss 战。</p>
-            <button className="campaign-primary" type="button" onClick={() => setShowCampaignCreator(true)}>
-              创建第一场人生战役
-            </button>
-          </>
-        )}
-      </section>
-
-      <section className="main-quest-card">
-        <div>
-          <p>当前人生主线</p>
-          <h2>{profile.mainGoal}</h2>
-          <span>
-            {DOMAIN_META[mainline.domain].name}方向 · 已行动 {mainline.count} 次
-            {mainline.next ? ` · 下一章节 ${mainline.next} 次` : " · 正在长期践行"}
-          </span>
-          <div className="mainline-progress"><i style={{ width: `${mainline.progress * 100}%` }} /></div>
-        </div>
-        <div className="main-quest-card__compass" aria-hidden>北</div>
-      </section>
-
-      <button className={`recovery-status recovery-status--${readiness.title === "精力稳定" ? "steady" : "rest"}`} type="button" onClick={onOpenRecovery}>
-        <span className="recovery-status__score">{readiness.score}</span>
-        <div>
-          <small>恢复营地</small>
-          <strong>{readiness.title}</strong>
-          <p>{readiness.guidance}</p>
-        </div>
-        <i aria-hidden>→</i>
-      </button>
-
-      <section className="domain-glance">
+      <section className="daily-side-quests">
         <div className="section-heading section-heading--compact">
           <div>
-            <p>六维成长</p>
-            <h2>你的能力轮廓</h2>
+            <p>{restDay ? "轻松任务" : "今日支线"}</p>
+            <h2>{restDay ? "只做让你恢复的事" : "可选，但会让今天更完整"}</h2>
           </div>
-          <button type="button" onClick={() => onNavigate("growth")}>查看成长</button>
+          <button type="button" onClick={() => onNavigate("quests")}>全部任务</button>
         </div>
-        <div className="domain-glance__grid">
-          {DOMAIN_ORDER.map((domain) => {
-            const meta = DOMAIN_META[domain];
-            return (
-              <div key={domain} className={`mini-attribute domain-${domain}`}>
-                <DomainMark domain={domain} compact />
-                <span>{meta.attribute}</span>
-                <strong>{profile.attributes[meta.attributeKey]}</strong>
+        <div className="daily-side-list">
+          {(restDay
+            ? restQuests.map((quest) => ({ quest, completed: completedToday(quest.id) }))
+            : sideItems
+          ).map(({ quest, completed }) => (
+            <button
+              className={completed ? "is-complete" : ""}
+              type="button"
+              key={quest.id}
+              disabled={completed}
+              onClick={() => onStart(quest)}
+            >
+              <DomainMark domain={quest.domain} compact />
+              <div>
+                <strong>{quest.title}</strong>
+                <small>{timingLabel(quest)}</small>
               </div>
-            );
-          })}
+              <span>{completed ? "✓" : "+20 EXP"}</span>
+            </button>
+          ))}
         </div>
       </section>
 
-      {showExpeditionCreator && (
-        <div className="sheet-backdrop" role="presentation" onMouseDown={() => setShowExpeditionCreator(false)}>
-          <section className="bottom-sheet expedition-sheet" role="dialog" aria-modal="true" aria-labelledby="expedition-title" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="sheet-handle" />
-            <div className="sheet-heading">
-              <div>
-                <p>七天只练一个方向</p>
-                <h2 id="expedition-title">创建成长远征</h2>
-              </div>
-              <button type="button" onClick={() => setShowExpeditionCreator(false)} aria-label="关闭">×</button>
-            </div>
-            <label className="field">
-              <span>本次训练领域</span>
-              <select value={expeditionDomain} onChange={(event) => setExpeditionDomain(event.target.value as Domain)}>
-                {DOMAIN_ORDER.map((domain) => (
-                  <option value={domain} key={domain}>
-                    {DOMAIN_META[domain].name} · {DOMAIN_META[domain].attribute}
-                    {domain === suggestedExpeditionDomain(state) ? "（当前较弱，推荐）" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="expedition-pace">
-              <span>选择可承受节奏</span>
-              <div>
-                {([3, 5, 7] as const).map((count) => (
-                  <button className={expeditionTarget === count ? "is-active" : ""} type="button" key={count} onClick={() => setExpeditionTarget(count)}>
-                    <strong>{count} 次</strong>
-                    <small>{count === 3 ? "轻量" : count === 5 ? "稳定" : "进取"}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <p className="gentle-rule">七天是方向，不是惩罚：漏做不扣分、不清零，也不会破坏已有成长。</p>
-            <button
-              className="primary-button primary-button--large"
-              type="button"
-              onClick={() => {
-                onCreateExpedition(expeditionDomain, expeditionTarget);
-                setShowExpeditionCreator(false);
-              }}
-            >
-              确认远征
-            </button>
-          </section>
-        </div>
+      {encounter && (
+        <section className={`daily-encounter ${encounter.completed ? "is-complete" : ""}`}>
+          <div className="daily-encounter__symbol" aria-hidden>?</div>
+          <div>
+            <p>今日奇遇</p>
+            <h2>{encounter.quest.title}</h2>
+            <span>{encounter.intro}</span>
+          </div>
+          <button
+            type="button"
+            disabled={encounter.completed}
+            onClick={() => onStart(encounter.quest)}
+          >
+            {encounter.completed ? "奇遇完成" : "接受奇遇"}
+          </button>
+        </section>
       )}
 
-      {showCampaignCreator && (
-        <div className="sheet-backdrop" role="presentation" onMouseDown={() => setShowCampaignCreator(false)}>
-          <section className="bottom-sheet campaign-sheet" role="dialog" aria-modal="true" aria-labelledby="campaign-title" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="sheet-handle" />
-            <div className="sheet-heading">
-              <div>
-                <p>未来 30～90 天</p>
-                <h2 id="campaign-title">选择人生战役</h2>
-              </div>
-              <button type="button" onClick={() => setShowCampaignCreator(false)} aria-label="关闭">×</button>
-            </div>
-            <div className="campaign-template-list">
-              {CAMPAIGN_TEMPLATES.map((template) => (
-                <button type="button" key={template.kind} onClick={() => {
-                  onCreateCampaign(template);
-                  setShowCampaignCreator(false);
-                }}>
-                  <DomainMark domain={template.domain} compact />
-                  <div>
-                    <strong>{template.title}</strong>
-                    <small>{template.description}</small>
-                  </div>
-                  <span>{template.targetCount} 次 →</span>
-                </button>
-              ))}
-            </div>
-          </section>
+      <section className={`weekly-boss-card ${bossDefeated ? "is-defeated" : ""}`}>
+        <div className="weekly-boss-card__head">
+          <div>
+            <p>本周现实 Boss</p>
+            <h2>{boss.title}</h2>
+            <span>{boss.subtitle}</span>
+          </div>
+          <strong aria-hidden>{bossDefeated ? "胜" : boss.mark}</strong>
         </div>
-      )}
+        <p className="weekly-boss-card__description">
+          {bossDefeated ? "你已经用现实行动击败了它。本周不需要重复证明。" : boss.description}
+        </p>
+        <div className="weekly-boss-progress" aria-label={`Boss 进度 ${bossProgress} / ${boss.targetCount}`}>
+          {Array.from({ length: boss.targetCount }, (_, index) => (
+            <i className={index < bossProgress ? "is-complete" : ""} key={index}>
+              {index < bossProgress ? "✓" : index + 1}
+            </i>
+          ))}
+        </div>
+        <div className="weekly-boss-card__footer">
+          <span>{bossDefeated ? "已获得 Boss 称号" : `${bossProgress} / ${boss.targetCount} · 击败奖励 50 EXP`}</span>
+          {!bossDefeated && <button type="button" onClick={() => onNavigate("quests")}>寻找克制任务</button>}
+        </div>
+      </section>
+
+      <p className="home-reality-reminder">关闭应用，去现实里完成它。成长会在你回来时等待结算。</p>
     </div>
   );
 }
-
 function QuestScreen({
   state,
   onStart,
@@ -1929,34 +1619,6 @@ function ActionCalendar({
   );
 }
 
-function AchievementCodex({ state }: { state: GameState }) {
-  const achievements = achievementsFor(state);
-  const unlocked = achievements.filter((item) => item.unlocked).length;
-  return (
-    <section className="achievement-codex">
-      <div className="section-heading">
-        <div><p>真实成就</p><h2>只有现实行动能够点亮</h2></div>
-        <span>{unlocked} / {achievements.length}</span>
-      </div>
-      <div className="achievement-grid">
-        {achievements.map((achievement) => (
-          <article
-            className={`${achievement.unlocked ? "is-unlocked" : ""} tier-${achievement.tier}`}
-            key={achievement.id}
-          >
-            <span>{achievement.unlocked ? achievement.mark : "◇"}</span>
-            <div>
-              <small>{achievement.unlocked ? "已获得" : "未解锁"}</small>
-              <h3>{achievement.title}</h3>
-              <p>{achievement.description}</p>
-            </div>
-          </article>
-        ))}
-      </div>
-      <p className="gentle-rule">成就不增加属性，也不能付费购买；它只记录你真实做过的事。</p>
-    </section>
-  );
-}
 
 function GrowthScreen({
   state,
@@ -1965,139 +1627,112 @@ function GrowthScreen({
   state: GameState;
   currentTime: number;
 }) {
-  const [domain, setDomain] = useState<Domain>("learning");
   const profile = state.profile!;
-  const stage = getGrowthStage(state);
-  const worldTier = Math.min(4, Math.floor(profile.totalCompletions / 10));
-  const domainNodes = GROWTH_NODES.filter((node) => node.domain === domain);
-  const growthUnlocked = profile.totalCompletions >= 3;
-  const worldUnlocked = profile.totalCompletions >= 6;
+  const levelState = levelProgress(profile.experience);
+  const memories = [...state.memories]
+    .sort(
+      (a, b) =>
+        new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
+    )
+    .slice(0, 12);
+  const coreDomains: Domain[] = [
+    "fitness",
+    "learning",
+    "creation",
+    "discipline",
+    "social",
+  ];
+  const mapUnlockLevels: Record<Domain, number> = {
+    fitness: 1,
+    learning: 1,
+    creation: 2,
+    discipline: 2,
+    social: 3,
+    exploration: 4,
+  };
 
   return (
-    <div className="screen growth-screen">
-      <ScreenHeader eyebrow="成长档案" title="看见真实的自己" />
-      <section className={`growth-summary world-tier-${worldTier}`}>
+    <div className="screen growth-screen growth-screen--v002">
+      <ScreenHeader eyebrow="现实成长可视化" title="人生探索地图" />
+
+      <section className="map-level-summary">
+        <span>LV.{profile.level}</span>
         <div>
-          <p>当前阶段</p>
-          <h2>{stage.name}</h2>
-          <span>{stage.description}</span>
-          <small>世界繁荣度 {worldTier} / 4 · 每 10 次真实行动改变一次世界</small>
+          <p>现实人生 RPG</p>
+          <h2>{profile.mainGoal}</h2>
+          <div><i style={{ width: `${levelState.ratio * 100}%` }} /></div>
+          <small>再获得 {levelState.required - levelState.current} EXP 升级</small>
         </div>
-        <span className="stage-seal">醒</span>
       </section>
 
-      <div className="growth-totals">
-        <div><strong>{profile.totalCompletions}</strong><span>完成任务</span></div>
-        <div><strong>{formatMinutes(profile.totalActionSeconds)}</strong><span>累计行动</span></div>
-        <div><strong>{getUnlockedNodeCount(state)} / 30</strong><span>星点点亮</span></div>
-      </div>
-
-      <ActionCalendar state={state} currentTime={currentTime} />
-
-      <section>
+      <section className="life-map-section">
         <div className="section-heading">
-          <div><p>六大能力</p><h2>行动构成你的轮廓</h2></div>
+          <div><p>人生地图</p><h2>你走过的地方，才会真正点亮</h2></div>
+          <span>{DOMAIN_ORDER.filter((domain) => domainStats(state, domain).completions > 0).length} / 6</span>
         </div>
-        <div className="attribute-grid">
-          {DOMAIN_ORDER.map((item) => {
-            const meta = DOMAIN_META[item];
-            const value = profile.attributes[meta.attributeKey];
+        <div className="life-continent-map">
+          {DOMAIN_ORDER.map((domain) => {
+            const meta = DOMAIN_META[domain];
+            const count = domainStats(state, domain).completions;
+            const unlockLevel = mapUnlockLevels[domain];
+            const levelLocked = profile.level < unlockLevel;
+            const worldState = levelLocked ? "locked" : worldStateFor(state, domain);
             return (
-              <article className={`attribute-card domain-${item}`} key={item}>
-                <DomainMark domain={item} />
-                <div><span>{meta.name}</span><h3>{meta.attribute}</h3></div>
-                <strong>{value}</strong>
-                <small>{value === 0 ? "等待第一次行动" : `已完成 ${value} 次行动`}</small>
+              <article className={`life-continent life-continent--${worldState} domain-${domain}`} key={domain}>
+                <div className="life-continent__terrain" aria-hidden>
+                  <span>{levelLocked ? "◇" : meta.mark}</span>
+                  <i />
+                </div>
+                <div>
+                  <small>{levelLocked ? `LV.${unlockLevel} 解锁` : count > 0 ? "地图已点亮" : "等待第一步"}</small>
+                  <h3>{meta.world}</h3>
+                  <p>{levelLocked ? "继续在现实中升级，迷雾会逐渐散开。" : meta.description}</p>
+                </div>
+                <strong>{levelLocked ? "锁" : `${count} 次`}</strong>
               </article>
             );
           })}
         </div>
       </section>
 
-      <AchievementCodex state={state} />
-
-      <section className="star-map">
+      <section className="core-attributes">
         <div className="section-heading">
-          <div><p>能力星图</p><h2>每个节点都来自现实</h2></div>
-          <span>{getUnlockedNodeCount(state)} / 30</span>
+          <div><p>五项核心属性</p><h2>属性只来自对应的现实行动</h2></div>
         </div>
-        {!growthUnlocked ? (
-          <LockedFeature title="星图仍在沉睡" description={`再完成 ${3 - profile.totalCompletions} 次任务，星图将显现。`} />
-        ) : (
-          <>
-            <div className="domain-tabs" role="tablist" aria-label="选择能力领域">
-              {DOMAIN_ORDER.map((item) => (
-                <button
-                  key={item}
-                  className={`${domain === item ? "is-active" : ""} domain-${item}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={domain === item}
-                  onClick={() => setDomain(item)}
-                >
-                  {DOMAIN_META[item].mark}
-                </button>
-              ))}
-            </div>
-            <div className="node-path">
-              {domainNodes.map((node, index) => {
-                const unlocked = isNodeUnlocked(state, node);
-                return (
-                  <article className={unlocked ? "is-unlocked" : ""} key={node.id}>
-                    <div className="node-line" aria-hidden />
-                    <span className="node-star">{unlocked ? "✦" : index + 1}</span>
-                    <div>
-                      <p>{unlocked ? "已点亮" : "尚未点亮"}</p>
-                      <h3>{node.title}</h3>
-                      <span>{node.description}</span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </>
-        )}
+        <div className="attribute-grid attribute-grid--five">
+          {coreDomains.map((domain) => {
+            const meta = DOMAIN_META[domain];
+            const value = profile.attributes[meta.attributeKey];
+            return (
+              <article className={`attribute-card domain-${domain}`} key={domain}>
+                <DomainMark domain={domain} />
+                <div><span>{meta.name}</span><h3>{meta.attribute}</h3></div>
+                <strong>{value}</strong>
+                <small>{value === 0 ? "等待第一次行动" : `由 ${value} 次现实行动形成`}</small>
+              </article>
+            );
+          })}
+        </div>
       </section>
 
-      <section className="growth-world">
+      <ActionCalendar state={state} currentTime={currentTime} />
+
+      <section className="memory-section">
         <div className="section-heading">
-          <div><p>个人成长世界</p><h2>行动让世界逐渐建立</h2></div>
+          <div><p>成长回忆</p><h2>真实发生过的时刻</h2></div>
+          <span>{state.memories.length}</span>
         </div>
-        {!worldUnlocked ? (
-          <LockedFeature title="远方仍被雾笼罩" description={`再完成 ${6 - profile.totalCompletions} 次任务，个人成长世界将显现。`} />
-        ) : (
-          <div className="world-map">
-            <div className="world-map__sky" aria-hidden />
-            {DOMAIN_ORDER.map((item) => {
-              const worldState = worldStateFor(state, item);
-              const count = domainStats(state, item).completions;
-              return (
-                <article className={`world-site world-site--${worldState} domain-${item}`} key={item}>
-                  <div className="world-building" aria-hidden>
-                    <span />
-                    <i />
-                  </div>
-                  <p>{DOMAIN_META[item].world}</p>
-                  <small>{worldState === "silent" ? "未点亮" : worldState === "lit" ? "建设中" : "已建立"} · {count} 次</small>
-                </article>
-              );
-            })}
+        {memories.length ? (
+          <div className="memory-list">
+            {memories.map((memory) => <MemoryCard memory={memory} key={memory.id} />)}
           </div>
+        ) : (
+          <div className="empty-memory"><span>忆</span><p>完成现实任务后，这里会留下你的成长轨迹。</p></div>
         )}
       </section>
     </div>
   );
 }
-
-function LockedFeature({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="locked-feature">
-      <span aria-hidden>◇</span>
-      <div><h3>{title}</h3><p>{description}</p></div>
-    </div>
-  );
-}
-
 function MemoryCard({ memory }: { memory: GrowthMemory }) {
   return (
     <article className={`memory-card ${memory.photoDataUrl ? "has-photo" : ""}`}>
@@ -2175,6 +1810,15 @@ function RewardVault({
     const nextIndex = (Math.max(0, currentIndex) + step) % drawableRewards.length;
     setDrawnRewardId(drawableRewards[nextIndex].id);
   };
+  const milestoneRewards = [
+    { target: 10, title: "安排一次认真庆祝" },
+    { target: 30, title: "为自己添一件喜欢的东西" },
+    { target: 60, title: "完成一次旅行或完整休息" },
+  ];
+  const nextMilestone =
+    milestoneRewards.find(
+      (milestone) => (state.profile?.totalCompletions ?? 0) < milestone.target,
+    ) ?? milestoneRewards[milestoneRewards.length - 1];
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -2199,13 +1843,21 @@ function RewardVault({
   return (
     <section className="reward-vault">
       <div className="section-heading section-heading--compact">
-        <div><p>现实奖励</p><h2>行动点宝库</h2></div>
+        <div><p>现实奖励</p><h2>成长要在现实里兑现</h2></div>
         <button type="button" onClick={() => setShowCreator(true)}>＋ 添加愿望</button>
       </div>
       <div className="point-balance">
         <span className="point-symbol" aria-hidden>焰</span>
         <div><small>可用行动点</small><strong>{state.profile?.actionPoints ?? 0}</strong></div>
         <p>只能由正式完成的现实行动获得</p>
+      </div>
+      <div className="reward-milestone-card">
+        <span>{Math.min(state.profile?.totalCompletions ?? 0, nextMilestone.target)} / {nextMilestone.target}</span>
+        <div>
+          <small>下一阶段奖励建议</small>
+          <strong>{nextMilestone.title}</strong>
+          <p>APP 只负责提醒；奖励由你根据预算和真实目标亲自兑现。</p>
+        </div>
       </div>
       {featuredReward && (
         <div className="reward-draw">
@@ -2299,136 +1951,6 @@ function RewardVault({
   );
 }
 
-function CompanionCard({ localOnly }: { localOnly: boolean }) {
-  const [loading, setLoading] = useState(!localOnly);
-  const [inviteCode, setInviteCode] = useState("");
-  const [message, setMessage] = useState("");
-  const [data, setData] = useState<{
-    signedIn?: boolean;
-    link?: {
-      code: string;
-      waiting: boolean;
-      partner: {
-        nickname: string;
-        completions: number;
-        activeToday: boolean;
-      } | null;
-    } | null;
-  }>({});
-
-  const refresh = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch("/api/companion", { cache: "no-store" });
-      if (response.status === 401) {
-        setData({ signedIn: false });
-      } else {
-        setData(await response.json());
-      }
-    } catch {
-      setMessage("同行服务暂时不可用");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (localOnly) return;
-    void fetch("/api/companion", { cache: "no-store" })
-      .then(async (response) =>
-        response.status === 401
-          ? { signedIn: false }
-          : await response.json(),
-      )
-      .then((payload) => setData(payload as typeof data))
-      .catch(() => setMessage("同行服务暂时不可用"))
-      .finally(() => setLoading(false));
-  }, [localOnly]);
-
-  const act = async (action: "create" | "join" | "leave") => {
-    setMessage("");
-    const response = await fetch("/api/companion", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action, code: inviteCode }),
-    });
-    if (!response.ok) {
-      setMessage(action === "join" ? "邀请码无效或已被使用" : "操作未完成");
-      return;
-    }
-    setInviteCode("");
-    await refresh();
-  };
-
-  const shareCode = async (code: string) => {
-    const text = `来和我一起成为觉醒玩家。同行邀请码：${code}`;
-    if (navigator.share) {
-      await navigator.share({ title: "觉醒玩家同行邀请", text });
-    } else {
-      await navigator.clipboard.writeText(text);
-      setMessage("邀请内容已复制");
-    }
-  };
-
-  if (localOnly) {
-    return (
-      <section className="companion-card companion-card--local">
-        <div className="section-heading section-heading--compact">
-          <div><p>同行契约</p><h2>联网同行功能准备中</h2></div>
-        </div>
-        <p>当前版本专注于你自己的现实成长，任务、照片和记录只保存在这台设备。</p>
-        <p className="gentle-rule">连接独立后端后，将恢复邀请码、共同任务与同行状态。</p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="companion-card">
-      <div className="section-heading section-heading--compact">
-        <div><p>同行契约</p><h2>两个人，彼此看见行动</h2></div>
-      </div>
-      {loading ? (
-        <p>正在寻找同行者…</p>
-      ) : data.signedIn === false ? (
-        <p>当前处于本机模式；通过 ChatGPT 身份访问后可创建同行邀请。</p>
-      ) : data.link ? (
-        data.link.waiting ? (
-          <div className="companion-invite">
-            <span>等待同行者加入</span>
-            <strong>{data.link.code}</strong>
-            <button type="button" onClick={() => void shareCode(data.link!.code)}>分享邀请码</button>
-            <button className="plain-button" type="button" onClick={() => void act("leave")}>取消邀请</button>
-          </div>
-        ) : (
-          <div className="companion-partner">
-            <span className={data.link.partner?.activeToday ? "is-active" : ""} aria-hidden>
-              {data.link.partner?.activeToday ? "✓" : "伴"}
-            </span>
-            <div>
-              <strong>{data.link.partner?.nickname}</strong>
-              <small>
-                累计行动 {data.link.partner?.completions ?? 0} 次 ·
-                {data.link.partner?.activeToday ? " 今天已行动" : " 今天按自己的节奏"}
-              </small>
-            </div>
-            <button type="button" onClick={() => void act("leave")}>解除</button>
-          </div>
-        )
-      ) : (
-        <div className="companion-actions">
-          <button type="button" onClick={() => void act("create")}>生成邀请</button>
-          <div>
-            <input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} maxLength={8} placeholder="输入邀请码" />
-            <button type="button" disabled={inviteCode.length < 4} onClick={() => void act("join")}>加入</button>
-          </div>
-        </div>
-      )}
-      {message && <small className="companion-message">{message}</small>}
-      <p className="gentle-rule">只共享昵称、累计行动与今日是否行动，不共享具体任务、照片或体重。</p>
-    </section>
-  );
-}
-
 function ProfileScreen({
   state,
   onImport,
@@ -2457,9 +1979,18 @@ function ProfileScreen({
   const [showDanger, setShowDanger] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const profile = state.profile!;
-  const memories = [...state.memories].sort(
-    (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
-  );
+  const collection = equipmentCollection(state);
+  const unlockedEquipment = collection.filter((equipment) => equipment.unlocked);
+  const lockedEquipment = collection.filter((equipment) => !equipment.unlocked);
+  const coreDomains: Domain[] = [
+    "fitness",
+    "learning",
+    "creation",
+    "discipline",
+    "social",
+  ];
+  const titles = achievementsFor(state).filter((achievement) => achievement.unlocked);
+  const levelState = levelProgress(profile.experience);
 
   const exportBackup = () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
@@ -2478,77 +2009,129 @@ function ProfileScreen({
   };
 
   return (
-    <div className="screen profile-screen">
-      <ScreenHeader eyebrow="玩家档案" title="我的旅程" />
-      <section className="profile-identity">
+    <div className="screen profile-screen profile-screen--character">
+      <ScreenHeader eyebrow="现实角色" title="我的玩家" />
+
+      <section className="character-identity-card">
         <div className="profile-avatar">{profile.nickname.slice(0, 1)}</div>
         <div>
-          <p>觉醒玩家</p>
+          <p>LV.{profile.level} · 觉醒玩家</p>
           <h2>{profile.nickname}</h2>
-          <span>自 {new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(profile.createdAt))} 开始行动</span>
+          <span>{profile.mainGoal}</span>
+          <div className="character-exp"><i style={{ width: `${levelState.ratio * 100}%` }} /></div>
+          <small>{levelState.current} / 100 EXP</small>
         </div>
       </section>
 
-      <section className="profile-goal">
-        <span>人生主线</span>
-        <h3>{profile.mainGoal}</h3>
-      </section>
-
-      <section className="account-card">
-        <span aria-hidden>{cloudStatus === "synced" ? "云" : "机"}</span>
-        <div>
-          <h3>{localOnly ? "手机本地存档已开启" : cloudStatus === "synced" ? "云端存档已开启" : cloudStatus === "saving" ? "正在同步成长记录" : "本机存档模式"}</h3>
-          <p>
-            {localOnly
-              ? "任务、照片与成长保存在当前设备。请定期导出备份，换手机前先完成备份迁移。"
-              : cloudStatus === "synced"
-              ? "任务、照片与成长按当前身份隔离，可在支持的设备上继续。"
-              : cloudStatus === "error"
-                ? "云端暂时不可用，本机记录仍会正常保存。"
-                : "当前记录保存在这台设备，并可继续手动导出备份。"}
-          </p>
-        </div>
-      </section>
-
-      <section className="install-card">
-        <div>
-          <p>手机桌面入口</p>
-          <h3>{isStandalone ? "已从手机桌面打开" : "像 App 一样打开觉醒玩家"}</h3>
-          <span>
-            {isStandalone
-              ? "当前正在使用全屏桌面版。"
-              : installAvailable
-                ? "安装后可全屏打开，并保留离线入口。"
-                : "iPhone 可按引导使用 Safari 的“添加到主屏幕”。"}
-          </span>
-        </div>
-        <button type="button" disabled={isStandalone} onClick={onInstall}>
-          {isStandalone ? "已安装" : installAvailable ? "添加到桌面" : "查看安装步骤"}
-        </button>
-      </section>
-
-      <CompanionCard localOnly={localOnly} />
-
-      <section className="memory-section">
+      <section className="character-section">
         <div className="section-heading">
-          <div><p>成长回忆</p><h2>真实发生过的时刻</h2></div>
-          <span>{memories.length}</span>
+          <div><p>属性</p><h2>现实行动形成的能力</h2></div>
         </div>
-        {memories.length ? (
-          <div className="memory-list">{memories.map((memory) => <MemoryCard memory={memory} key={memory.id} />)}</div>
+        <div className="character-attribute-list">
+          {coreDomains.map((domain) => {
+            const meta = DOMAIN_META[domain];
+            return (
+              <article className={`domain-${domain}`} key={domain}>
+                <DomainMark domain={domain} compact />
+                <span>{meta.attribute}</span>
+                <strong>{profile.attributes[meta.attributeKey]}</strong>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="character-section equipment-section">
+        <div className="section-heading">
+          <div><p>装备</p><h2>真实成长掉落的收藏卡</h2></div>
+          <span>{unlockedEquipment.length} / {EQUIPMENT_CARDS.length}</span>
+        </div>
+        {unlockedEquipment.length ? (
+          <div className="equipment-card-grid">
+            {unlockedEquipment.map((equipment) => (
+              <article className={`equipment-card rarity-${equipment.rarity}`} key={equipment.id}>
+                <EquipmentArtwork equipment={equipment} />
+                <div>
+                  <small>{equipment.rarity} · {equipment.attribute}</small>
+                  <h3>{equipment.name}</h3>
+                  <p>{equipment.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
         ) : (
-          <div className="empty-memory"><span>忆</span><p>完成任务后，可以在这里收下照片与文字。</p></div>
+          <div className="empty-equipment">
+            <span aria-hidden>匣</span>
+            <p>完成同一领域 3 次真实行动，第一件装备会在结算时掉落。</p>
+          </div>
         )}
       </section>
 
-      <RewardVault
-        state={state}
-        onCreate={onCreateReward}
-        onRedeem={onRedeemReward}
-      />
+      <section className="character-section backpack-section">
+        <div className="section-heading">
+          <div><p>背包</p><h2>尚未获得的装备线索</h2></div>
+        </div>
+        <div className="backpack-grid">
+          {lockedEquipment.map((equipment) => {
+            const count = domainStats(state, equipment.domain).completions;
+            return (
+              <article key={equipment.id}>
+                <EquipmentArtwork equipment={equipment} locked />
+                <div>
+                  <small>LV.{equipment.unlockLevel} · {DOMAIN_META[equipment.domain].name}行动 {count} / {equipment.unlockCount}</small>
+                  <strong>{equipment.name}</strong>
+                  <span>完成对应现实成长后解锁</span>
+                </div>
+              </article>
+            );
+          })}
+          {lockedEquipment.length === 0 && <p>当前版本装备已全部收集。新的装备图鉴将在后续版本扩展。</p>}
+        </div>
+      </section>
 
-      <section className="settings-section">
-        <div className="section-heading section-heading--compact"><div><p>体验设置</p><h2>按你的方式行动</h2></div></div>
+      <section className="character-section title-section">
+        <div className="section-heading">
+          <div><p>称号</p><h2>你真实战胜过的证明</h2></div>
+          <span>{titles.length + state.bossVictories.length}</span>
+        </div>
+        <div className="title-chip-list">
+          {titles.map((title) => (
+            <span className={`title-chip title-chip--${title.tier}`} key={title.id}>
+              <i>{title.mark}</i>{title.title}
+            </span>
+          ))}
+          {state.bossVictories.map((victory) => (
+            <span className="title-chip title-chip--boss" key={`${victory.bossId}-${victory.week}`}>
+              <i>胜</i>现实破障者
+            </span>
+          ))}
+          {titles.length === 0 && state.bossVictories.length === 0 && (
+            <p>第一次真实行动完成后，你会获得第一个称号。</p>
+          )}
+        </div>
+      </section>
+
+      <RewardVault state={state} onCreate={onCreateReward} onRedeem={onRedeemReward} />
+
+      <details className="profile-system-panel">
+        <summary>本机、安装与体验设置</summary>
+        <section className="account-card">
+          <span aria-hidden>{cloudStatus === "synced" ? "云" : "机"}</span>
+          <div>
+            <h3>{localOnly ? "手机本地存档" : cloudStatus === "synced" ? "云端存档已同步" : "本机存档模式"}</h3>
+            <p>{localOnly ? "成长保存在当前设备，请定期导出备份。" : "云端不可用时，本机记录仍会正常保存。"}</p>
+          </div>
+        </section>
+        <section className="install-card">
+          <div>
+            <p>手机桌面入口</p>
+            <h3>{isStandalone ? "已从手机桌面打开" : "像 App 一样打开觉醒玩家"}</h3>
+            <span>安装后可全屏打开，并保留离线入口。</span>
+          </div>
+          <button type="button" disabled={isStandalone} onClick={onInstall}>
+            {isStandalone ? "已安装" : installAvailable ? "添加到桌面" : "查看安装步骤"}
+          </button>
+        </section>
         <div className="settings-card">
           {([
             ["sound", "完成音效", "完成行动时播放简短声音"],
@@ -2561,45 +2144,27 @@ function ProfileScreen({
             </label>
           ))}
         </div>
-      </section>
-
-      <section className="backup-section">
-        <div className="section-heading section-heading--compact"><div><p>本机数据</p><h2>备份与恢复</h2></div></div>
-        <div className="data-warning">
-          <span aria-hidden>!</span>
-          <p>浏览器数据可能因为清理缓存、卸载浏览器或系统空间不足而消失，请定期导出备份。</p>
-        </div>
         <div className="backup-actions">
-          <button type="button" onClick={exportBackup}><span>↓</span><div><strong>导出完整备份</strong><small>保存为 JSON 文件</small></div></button>
+          <button type="button" onClick={exportBackup}><span>↓</span><div><strong>导出完整备份</strong><small>换手机前请先保存</small></div></button>
           <button type="button" onClick={() => fileRef.current?.click()}><span>↑</span><div><strong>从备份恢复</strong><small>恢复前会验证数据</small></div></button>
           <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={chooseBackup} />
         </div>
-      </section>
-
-      <section className="privacy-card">
-        <span aria-hidden>◇</span>
-        <div>
-          <h3>你的数据，只属于你</h3>
-          <p>{localOnly ? "当前版本不上传任务、照片、体重或私人记录；所有成长数据只保存在本机浏览器。" : "云端存档按当前身份隔离；同行者看不到具体任务、照片、体重和私人记录。"}</p>
-        </div>
-      </section>
-
-      {!showDanger ? (
-        <button className="clear-trigger" type="button" onClick={() => setShowDanger(true)}>清除本机全部数据</button>
-      ) : (
-        <div className="danger-confirm">
-          <p>这会永久清除玩家、任务、照片与成长记录，且无法撤销。</p>
-          <div>
-            <button type="button" onClick={() => setShowDanger(false)}>取消</button>
-            <button type="button" onClick={onClear}>确认全部清除</button>
+        {!showDanger ? (
+          <button className="clear-trigger" type="button" onClick={() => setShowDanger(true)}>清除本机全部数据</button>
+        ) : (
+          <div className="danger-confirm">
+            <p>这会永久清除玩家、任务、照片与成长记录，且无法撤销。</p>
+            <div>
+              <button type="button" onClick={() => setShowDanger(false)}>取消</button>
+              <button type="button" onClick={onClear}>确认全部清除</button>
+            </div>
           </div>
-        </div>
-      )}
-      <p className="version-label">{localOnly ? "觉醒玩家 · GitHub 本机版 V3.1" : "觉醒玩家 · iPhone 私人版 V3.0"}</p>
+        )}
+      </details>
+      <p className="version-label">觉醒玩家 · V0.0.2 Real Life RPG</p>
     </div>
   );
 }
-
 function BottomNav({ tab, onChange, hasActive }: { tab: Tab; onChange: (tab: Tab) => void; hasActive: boolean }) {
   return (
     <nav className="bottom-nav" aria-label="主要导航">
@@ -2681,9 +2246,9 @@ function CompletionReward({
         {Array.from({ length: 12 }, (_, index) => <i key={index} />)}
       </div>
       <section className={`reward-settlement domain-${outcome.domain}`}>
-        <div className="reward-seal" aria-hidden>成</div>
+        <div className="reward-seal" aria-hidden>{outcome.levelUp ? "升" : outcome.bossDefeated ? "胜" : "成"}</div>
         <p className="eyebrow">真实行动结算</p>
-        <h2 id="reward-title">行动已完成</h2>
+        <h2 id="reward-title">{outcome.levelUp ? `升级至 LV.${outcome.level}` : "行动已完成"}</h2>
         <span className="reward-quest-name">{outcome.questTitle}</span>
 
         <div className="reward-gains">
@@ -2695,7 +2260,34 @@ function CompletionReward({
             <span className="point-symbol">焰</span>
             <div><small>行动点</small><strong>+{outcome.points}</strong></div>
           </article>
+          <article>
+            <span className="point-symbol">EXP</span>
+            <div><small>玩家经验</small><strong>+{outcome.experience}</strong></div>
+          </article>
         </div>
+
+        {outcome.bossDefeated && (
+          <div className="boss-victory-drop">
+            <span aria-hidden>胜</span>
+            <div><small>现实 Boss 已击败</small><strong>{outcome.bossDefeated}</strong></div>
+          </div>
+        )}
+
+        {outcome.equipmentUnlocks.length > 0 && (
+          <div className="equipment-drop">
+            <p>装备掉落 · 来自真实成长</p>
+            {outcome.equipmentUnlocks.map((equipment) => (
+              <article key={equipment.id}>
+                <EquipmentArtwork equipment={equipment} />
+                <div>
+                  <small>{equipment.rarity}装备</small>
+                  <strong>{equipment.name}</strong>
+                  <span>{equipment.description}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
 
         {(outcome.masteryTitle || outcome.achievements.length > 0) && (
           <div className="reward-unlocks">
@@ -2903,13 +2495,13 @@ export default function Home() {
     ? recoveryElapsedSeconds(activeRecovery, now)
     : 0;
 
-  const createPlayer = (nickname: string, mainGoal: string) => {
+  const createPlayer = (mainGoal: string) => {
     updateState((current) => {
       const next: GameState = {
         ...current,
         profile: {
         id: createId("player"),
-        nickname,
+        nickname: "玩家",
         mainGoal,
         createdAt: new Date().toISOString(),
         attributes: {
@@ -2923,6 +2515,8 @@ export default function Home() {
         totalCompletions: 0,
         totalActionSeconds: 0,
         actionPoints: 0,
+        experience: 0,
+        level: 1,
       },
       };
       return {
@@ -2936,6 +2530,11 @@ export default function Home() {
     if (activeSession || activeRecovery) {
       notify("已有一项行动正在进行");
       setTab("focus");
+      return;
+    }
+    const unlockLevel = questUnlockLevel(quest);
+    if ((state.profile?.level ?? 1) < unlockLevel) {
+      notify(`达到 LV.${unlockLevel} 后解锁这项任务`);
       return;
     }
     if (isRestartQuest(quest) && completedRestartToday(state)) {
@@ -3043,22 +2642,53 @@ export default function Home() {
         .filter((achievement) => achievement.unlocked)
         .map((achievement) => achievement.id),
     );
+    const beforeEquipment = new Set(
+      equipmentCollection(state)
+        .filter((equipment) => equipment.unlocked)
+        .map((equipment) => equipment.id),
+    );
     const beforeMastery = questMastery(state, quest.id);
     const completionCount = beforeMastery.count + 1;
     const masteryBonus = masteryPointBonus(completionCount);
     const basePoints = completionPointReward(quest);
     const todayPlan = dailyPlanFor(state);
-    const planItem = todayPlan
-      ? dailyPlanItems(state, todayPlan).find((item) => item.quest.id === quest.id)
+    const planItems = todayPlan ? dailyPlanItems(state, todayPlan) : [];
+    const planIndex = planItems.findIndex((item) => item.quest.id === quest.id);
+    const planItem = planIndex >= 0
+      ? planItems[planIndex]
       : undefined;
     const dailyBonus =
       todayPlan &&
       !todayPlan.claimedAt &&
       planItem &&
       !planItem.completed &&
-      dailyPlanItems(state, todayPlan).filter((item) => item.completed).length === 2
+      planItems.filter((item) => item.completed).length === 2
         ? 8
         : 0;
+    const dailyExperienceBonus =
+      !isRestDay() && planItem && !planItem.completed
+        ? planIndex === 0
+          ? 10
+          : 5
+        : 0;
+    const encounter = dailyEncounterFor(state);
+    const encounterExperienceBonus =
+      encounter && encounter.quest.id === quest.id && !encounter.completed ? 5 : 0;
+    const boss = weeklyBossFor(state);
+    const currentBossWeek = weekKey();
+    const bossAlreadyDefeated = state.bossVictories.some(
+      (victory) =>
+        victory.bossId === boss.id && victory.week === currentBossWeek,
+    );
+    const bossDefeated =
+      !bossAlreadyDefeated &&
+      boss.domains.includes(quest.domain) &&
+      weeklyBossProgress(state, boss) + 1 >= boss.targetCount;
+    const experienceReward =
+      completionExperienceReward(quest) +
+      dailyExperienceBonus +
+      encounterExperienceBonus +
+      (bossDefeated ? 50 : 0);
     const totalReward = basePoints + masteryBonus + dailyBonus;
     const rawNext: GameState = {
       ...state,
@@ -3077,11 +2707,18 @@ export default function Home() {
               status: "completed" as const,
               completedAt,
               finalDurationSeconds: durationSeconds,
+              experienceEarned: experienceReward,
             }
           : item,
       ),
       memories: [...state.memories, memory],
       rewardedSessionIds: [...state.rewardedSessionIds, session.id],
+      bossVictories: bossDefeated
+        ? [
+            ...state.bossVictories,
+            { bossId: boss.id, week: currentBossWeek, defeatedAt: completedAt },
+          ]
+        : state.bossVictories,
       dailyPlans: state.dailyPlans.map((plan) =>
         dailyBonus > 0 && plan.date === todayPlan?.date
           ? { ...plan, claimedAt: completedAt }
@@ -3094,6 +2731,9 @@ export default function Home() {
       (achievement) =>
         achievement.unlocked && !beforeAchievements.has(achievement.id),
     );
+    const newEquipment = equipmentCollection(next).filter(
+      (equipment) => equipment.unlocked && !beforeEquipment.has(equipment.id),
+    );
     const bonusLabels: string[] = [];
     if (quest.difficulty === "challenge") bonusLabels.push("挑战行动加成");
     if (masteryBonus > 0) {
@@ -3102,17 +2742,29 @@ export default function Home() {
     if (dailyBonus > 0) {
       bonusLabels.push("今日觉醒三步 +8 行动点");
     }
+    if (dailyExperienceBonus > 0) {
+      bonusLabels.push(
+        planIndex === 0 ? "今日主线 +10 EXP" : "今日支线 +5 EXP",
+      );
+    }
+    if (encounterExperienceBonus > 0) bonusLabels.push("今日奇遇 +5 EXP");
+    if (bossDefeated) bonusLabels.push(`击败「${boss.title}」+50 EXP`);
     setState(next);
     setCompletionReward({
       questTitle: quest.title,
       domain: quest.domain,
       points: totalReward,
+      experience: experienceReward,
+      level: next.profile?.level ?? 1,
+      levelUp: (next.profile?.level ?? 1) > (state.profile?.level ?? 1),
       bonusLabels,
       masteryTitle:
         afterMastery.rank.title !== beforeMastery.rank.title
           ? afterMastery.rank.title
           : undefined,
       achievements: newAchievements.map((achievement) => achievement.title),
+      equipmentUnlocks: newEquipment,
+      bossDefeated: bossDefeated ? boss.title : undefined,
       totalPoints: next.profile?.actionPoints ?? totalReward,
     });
     if (!localOnly && quest.communitySourceId) {
@@ -3179,132 +2831,6 @@ export default function Home() {
       }).catch(() => undefined);
     }
     notify(`已加入「${communityQuest.title}」`);
-  };
-
-  const createExpedition = (
-    domain: Domain,
-    targetCount: 3 | 5 | 7,
-  ) => {
-    if (activeExpedition(state)) {
-      notify("请先完成当前成长远征");
-      return;
-    }
-    const startedAt = new Date();
-    const plannedEndAt = new Date(startedAt);
-    plannedEndAt.setDate(plannedEndAt.getDate() + 7);
-    const expedition: GrowthExpedition = {
-      id: createId("expedition"),
-      domain,
-      targetCount,
-      baselineCount: domainStats(state, domain).completions,
-      startedAt: startedAt.toISOString(),
-      plannedEndAt: plannedEndAt.toISOString(),
-    };
-    updateState((current) => ({
-      ...current,
-      expeditions: [...current.expeditions, expedition],
-    }));
-    notify(`七日远征已开始 · 完成 ${targetCount} 次真实行动`);
-  };
-
-  const claimExpedition = (expedition: GrowthExpedition) => {
-    if (
-      expedition.claimedAt ||
-      expeditionProgress(state, expedition) < expedition.targetCount
-    ) {
-      notify("远征目标尚未完成");
-      return;
-    }
-    const claimedAt = new Date().toISOString();
-    updateState((current) => {
-      const latest = current.expeditions.find(
-        (item) => item.id === expedition.id,
-      );
-      if (
-        !latest ||
-        latest.claimedAt ||
-        expeditionProgress(current, latest) < latest.targetCount
-      ) {
-        return current;
-      }
-      return {
-        ...current,
-        profile: current.profile
-          ? {
-              ...current.profile,
-              actionPoints: current.profile.actionPoints + 15,
-            }
-          : null,
-        expeditions: current.expeditions.map((item) =>
-          item.id === expedition.id ? { ...item, claimedAt } : item,
-        ),
-      };
-    });
-    notify("远征完成 · 获得 15 行动点");
-  };
-
-  const createCampaign = (template: CampaignTemplate) => {
-    if (activeCampaign(state)) {
-      notify("请先完成当前人生战役");
-      return;
-    }
-    const campaignId = createId("campaign");
-    const bossQuestId = `boss-${campaignId}`;
-    const bossQuest: Quest = {
-      id: bossQuestId,
-      title: template.bossTitle,
-      description: template.bossDescription,
-      domain: template.domain,
-      plannedMinutes: template.bossMinutes,
-      difficulty: "challenge",
-      isCustom: false,
-      tags: ["courage", "upgrade"],
-    };
-    const campaign: LifeCampaign = {
-      id: campaignId,
-      kind: template.kind,
-      title: template.title,
-      domain: template.domain,
-      targetCount: template.targetCount,
-      baselineCount: domainStats(state, template.domain).completions,
-      bossQuestId,
-      startedAt: new Date().toISOString(),
-    };
-    updateState((current) => ({
-      ...current,
-      quests: [...current.quests, bossQuest],
-      campaigns: [...current.campaigns, campaign],
-    }));
-    notify(`人生战役「${template.title}」已开启`);
-  };
-
-  const claimCampaign = (campaign: LifeCampaign) => {
-    if (
-      campaign.claimedAt ||
-      campaignProgress(state, campaign) < campaign.targetCount ||
-      questCompletionCount(state, campaign.bossQuestId) === 0
-    ) {
-      notify("请先完成章节行动与最终 Boss");
-      return;
-    }
-    const claimedAt = new Date().toISOString();
-    updateState((current) => {
-      const latest = current.campaigns.find((item) => item.id === campaign.id);
-      if (!latest || latest.claimedAt) return current;
-      return {
-        ...current,
-        profile: current.profile
-          ? {
-              ...current.profile,
-              actionPoints: current.profile.actionPoints + 60,
-            }
-          : null,
-        campaigns: current.campaigns.map((item) =>
-          item.id === campaign.id ? { ...item, claimedAt } : item,
-        ),
-      };
-    });
-    notify("人生战役完成 · 获得 60 行动点");
   };
 
   const createCourageLadder = (theme: CourageTheme) => {
@@ -3559,10 +3085,6 @@ export default function Home() {
             activeRecoveryElapsed={activeRecoveryElapsed}
             onNavigate={setTab}
             onStart={requestHomeQuestStart}
-            onCreateExpedition={createExpedition}
-            onClaimExpedition={claimExpedition}
-            onCreateCampaign={createCampaign}
-            onClaimCampaign={claimCampaign}
             onOpenRecovery={() => {
               if (activeRecovery) setTab("focus");
               else setShowRecoveryCamp(true);

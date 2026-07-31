@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: "觉醒玩家｜让真实行动被看见",
   description:
-    "把读书、运动、创作、自律、社交与探索，变成看得见的现实成长。",
+    "把现实人生游戏化：完成真实任务、升级、挑战现实 Boss，并收藏属于自己的成长装备。",
   applicationName: "觉醒玩家",
   manifest: "/manifest.webmanifest",
   icons: {
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     siteName: "觉醒玩家",
     title: "觉醒玩家｜让真实行动被看见",
     description:
-      "完成现实任务，点亮六大能力、能力星图与属于你的成长世界。",
+      "完成现实任务，获得 EXP、装备与称号，一步步点亮属于你的人生地图。",
     images: [
       {
         url: "/og.png",
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "觉醒玩家｜让真实行动被看见",
     description:
-      "完成现实任务，点亮六大能力、能力星图与属于你的成长世界。",
+      "完成现实任务，获得 EXP、装备与称号，一步步点亮属于你的人生地图。",
     images: ["/og.png"],
   },
   appleWebApp: {

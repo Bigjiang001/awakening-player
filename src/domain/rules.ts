@@ -1,13 +1,17 @@
 import {
+  DAILY_ENCOUNTERS,
   DOMAIN_META,
   DOMAIN_ORDER,
+  EQUIPMENT_CARDS,
   GROWTH_NODES,
   RECOVERY_ACTIONS,
   RESTART_QUESTS,
+  WEEKLY_BOSSES,
 } from "../data/game-data";
 import type {
   DailyAwakeningPlan,
   Domain,
+  EquipmentCard,
   GameState,
   GrowthExpedition,
   GrowthNode,
@@ -15,6 +19,7 @@ import type {
   Quest,
   RecoverySession,
   TaskSession,
+  WeeklyBoss,
 } from "./types";
 
 export const createId = (prefix: string) =>
@@ -91,6 +96,106 @@ export const questUsesReferenceTime = (
   quest.domain === "learning" ||
   quest.domain === "fitness";
 
+export const completionExperienceReward = (quest: Quest) => {
+  if (isRestartQuest(quest)) return 8;
+  if (isBossQuest(quest)) return 60;
+  return quest.difficulty === "challenge" ? 35 : 20;
+};
+
+export const playerLevelFromExperience = (experience: number) =>
+  Math.max(1, Math.floor(Math.max(0, experience) / 100) + 1);
+
+export const levelProgress = (experience: number) => ({
+  current: Math.max(0, experience) % 100,
+  required: 100,
+  ratio: (Math.max(0, experience) % 100) / 100,
+});
+
+export const questUnlockLevel = (quest: Quest) => {
+  if (isBossQuest(quest)) return 5;
+  if (quest.difficulty === "challenge") return 3;
+  if (quest.tags?.includes("seasonal")) return 2;
+  return 1;
+};
+
+export const equipmentCollection = (state: GameState) =>
+  EQUIPMENT_CARDS.map((equipment): EquipmentCard & { unlocked: boolean } => ({
+    ...equipment,
+    unlocked:
+      (state.profile?.level ?? 1) >= equipment.unlockLevel &&
+      domainStats(state, equipment.domain).completions >= equipment.unlockCount,
+  }));
+
+export const weekKey = (value: Date | string | number = new Date()) => {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  date.setHours(0, 0, 0, 0);
+  const day = date.getDay();
+  date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+  return localDateKey(date);
+};
+
+export const weeklyBossFor = (
+  state: GameState,
+  value: Date | string | number = new Date(),
+): WeeklyBoss => {
+  const level = state.profile?.level ?? 1;
+  const available = WEEKLY_BOSSES.filter((boss) => boss.minLevel <= level);
+  const key = weekKey(value);
+  const seed = Number(key.replaceAll("-", ""));
+  return available[seed % Math.max(1, available.length)] ?? WEEKLY_BOSSES[0];
+};
+
+export const weeklyBossProgress = (
+  state: GameState,
+  boss: WeeklyBoss,
+  value: Date | string | number = new Date(),
+) => {
+  const week = weekKey(value);
+  return Math.min(
+    boss.targetCount,
+    state.sessions.filter((session) => {
+      if (
+        session.status !== "completed" ||
+        !session.completedAt ||
+        weekKey(session.completedAt) !== week
+      ) {
+        return false;
+      }
+      const quest = getQuest(state, session.questId);
+      return Boolean(quest && boss.domains.includes(quest.domain));
+    }).length,
+  );
+};
+
+export const isRestDay = (value: Date | string | number = new Date()) =>
+  new Date(value).getDay() === 0;
+
+export const dailyEncounterFor = (
+  state: GameState,
+  value: Date | string | number = new Date(),
+) => {
+  const key = localDateKey(value);
+  const seed = Number(key.replaceAll("-", ""));
+  const ordered = DAILY_ENCOUNTERS.map(
+    (encounter, index) =>
+      DAILY_ENCOUNTERS[(seed + index) % DAILY_ENCOUNTERS.length],
+  );
+  const selected = ordered.find((encounter) =>
+    state.quests.some((quest) => quest.id === encounter.questId),
+  );
+  if (!selected) return undefined;
+  const quest = getQuest(state, selected.questId);
+  if (!quest) return undefined;
+  const completed = state.sessions.some(
+    (session) =>
+      session.questId === quest.id &&
+      session.status === "completed" &&
+      session.completedAt &&
+      localDateKey(session.completedAt) === key,
+  );
+  return { ...selected, quest, completed };
+};
+
 export const questCompletionCount = (state: GameState, questId: string) =>
   state.sessions.filter(
     (session) =>
@@ -163,6 +268,11 @@ const completedWithQuest = (state: GameState) =>
 export const reconcileProgress = (state: GameState): GameState => {
   if (!state.profile) return state;
   const completed = completedWithQuest(state);
+  const experience = completed.reduce(
+    (sum, { session, quest }) =>
+      sum + (session.experienceEarned ?? completionExperienceReward(quest)),
+    0,
+  );
   const attributes = {
     intelligence: 0,
     strength: 0,
@@ -185,6 +295,8 @@ export const reconcileProgress = (state: GameState): GameState => {
         0,
       ),
       actionPoints: state.profile.actionPoints ?? 0,
+      experience,
+      level: playerLevelFromExperience(experience),
     },
     activeSessionId:
       state.activeSessionId &&
@@ -427,11 +539,16 @@ export const buildDailyPlan = (
 ): DailyAwakeningPlan => {
   const date = localDateKey(now);
   const numericDay = Number(date.replaceAll("-", ""));
+  const mainDomain = mainlineDomain(state.profile?.mainGoal ?? "");
   const questIds = PILLARS.map((pillar, pillarIndex) => {
-    const weakest = [...pillar.domains].sort(
-      (a, b) =>
-        domainStats(state, a).completions - domainStats(state, b).completions,
-    )[0];
+    const weakest =
+      pillarIndex === 0
+        ? mainDomain
+        : [...pillar.domains].sort(
+            (a, b) =>
+              domainStats(state, a).completions -
+              domainStats(state, b).completions,
+          )[0];
     const candidates = state.quests.filter(
       (quest) =>
         quest.domain === weakest &&
@@ -682,8 +799,8 @@ export const achievementsFor = (state: GameState): AchievementDefinition[] => {
     },
     {
       id: "six-awake",
-      title: "六维初醒",
-      description: "六大领域都完成过真实行动",
+      title: "六域初醒",
+      description: "六块人生地图都完成过真实行动",
       mark: "六",
       tier: "silver",
       unlocked: allAwake,

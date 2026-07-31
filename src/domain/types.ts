@@ -32,6 +32,8 @@ export type PlayerProfile = {
   totalCompletions: number;
   totalActionSeconds: number;
   actionPoints: number;
+  experience: number;
+  level: number;
 };
 
 export type Quest = {
@@ -68,8 +70,46 @@ export type TaskSession = {
   completedAt?: string;
   plannedMinutes: number;
   timingMode?: "timed" | "result";
+  experienceEarned?: number;
   finalDurationSeconds?: number;
   firstStep?: string;
+};
+
+export type EquipmentRarity =
+  | "普通"
+  | "优秀"
+  | "稀有"
+  | "史诗"
+  | "传说"
+  | "神话";
+
+export type EquipmentCard = {
+  id: string;
+  name: string;
+  rarity: EquipmentRarity;
+  description: string;
+  attribute: string;
+  domain: Domain;
+  unlockCount: number;
+  unlockLevel: number;
+  artIndex: 0 | 1 | 2 | 3 | 4 | 5;
+};
+
+export type WeeklyBoss = {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  mark: string;
+  domains: Domain[];
+  targetCount: number;
+  minLevel: number;
+};
+
+export type BossVictory = {
+  bossId: string;
+  week: string;
+  defeatedAt: string;
 };
 
 export type GrowthMemory = {
@@ -225,6 +265,7 @@ export type GameState = {
   expeditions: GrowthExpedition[];
   courageLadders: CourageLadder[];
   campaigns: LifeCampaign[];
+  bossVictories: BossVictory[];
   actionContext: ActionContext;
   metrics: ProductMetrics;
   lastModifiedAt: string;

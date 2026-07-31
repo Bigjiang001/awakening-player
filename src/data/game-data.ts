@@ -2,9 +2,11 @@ import type {
   AttributeKey,
   Domain,
   GrowthNode,
+  EquipmentCard,
   Quest,
   QuestTag,
   RealReward,
+  WeeklyBoss,
 } from "../domain/types";
 
 export const DOMAIN_ORDER: Domain[] = [
@@ -29,10 +31,10 @@ export const DOMAIN_META: Record<
 > = {
   learning: {
     name: "学习",
-    attribute: "智力",
+    attribute: "智慧",
     attributeKey: "intelligence",
     mark: "智",
-    world: "知识塔",
+    world: "语言大陆",
     description: "把好奇心炼成理解力",
   },
   fitness: {
@@ -40,7 +42,7 @@ export const DOMAIN_META: Record<
     attribute: "力量",
     attributeKey: "strength",
     mark: "力",
-    world: "训练场",
+    world: "身体大陆",
     description: "让身体成为可靠的同伴",
   },
   creation: {
@@ -48,7 +50,7 @@ export const DOMAIN_META: Record<
     attribute: "创造",
     attributeKey: "creativity",
     mark: "创",
-    world: "创作工坊",
+    world: "创作大陆",
     description: "把感受变成真实作品",
   },
   discipline: {
@@ -56,15 +58,15 @@ export const DOMAIN_META: Record<
     attribute: "意志",
     attributeKey: "willpower",
     mark: "志",
-    world: "秩序营地",
+    world: "智慧大陆",
     description: "在选择中建立秩序",
   },
   social: {
     name: "社交",
-    attribute: "魅力",
+    attribute: "社交",
     attributeKey: "charisma",
     mark: "和",
-    world: "同行广场",
+    world: "社交大陆",
     description: "真诚地连接与表达",
   },
   exploration: {
@@ -72,7 +74,7 @@ export const DOMAIN_META: Record<
     attribute: "感知",
     attributeKey: "perception",
     mark: "观",
-    world: "远望台",
+    world: "探索大陆",
     description: "走出边界，看见可能",
   },
 };
@@ -224,6 +226,155 @@ export const RESTART_QUESTS: Quest[] = [
   quest("restart-discipline", "五分钟归位", "只整理一个小区域，先移走一件无用物品。", "discipline", 5),
   quest("restart-social", "五分钟回应", "选择一条需要回应的信息，写清事实与真实想法。", "social", 5),
   quest("restart-exploration", "五分钟求证", "选定一个现实问题，从官方或可靠来源开始查证。", "exploration", 5),
+];
+
+export const DAILY_ENCOUNTERS = [
+  { questId: "creative-micro-adventure-30", intro: "让熟悉的城市出现一块新地图。" },
+  { questId: "social-contact-10", intro: "一段真诚联系，可能开启新的支线。" },
+  { questId: "season-sunrise-30", intro: "今天的天空只出现一次。" },
+  { questId: "brave-compliment-5", intro: "把你看见的美好，真实地说出来。" },
+  { questId: "creative-photo-hunt-20", intro: "去现实里收集五种颜色。" },
+  { questId: "popular-elder-interview-25", intro: "有些经验，只能从真实的人那里获得。" },
+  { questId: "creative-family-recipe-40", intro: "把一份生活记忆变成真正会做的事。" },
+  { questId: "brave-useful-help-15", intro: "今天为一个真实的人解决一个小问题。" },
+] as const;
+
+export const REST_DAY_QUEST_IDS = [
+  "fit-stretch-8",
+  "discipline-plan-10",
+  "creative-phonefree-30",
+] as const;
+
+export const WEEKLY_BOSSES: WeeklyBoss[] = [
+  {
+    id: "boss-procrastination",
+    title: "拖延魔王",
+    subtitle: "它靠‘等会儿再做’变强",
+    description: "本周完成 3 次自律或创作行动，用现实进度击破拖延。",
+    mark: "延",
+    domains: ["discipline", "creation"],
+    targetCount: 3,
+    minLevel: 1,
+  },
+  {
+    id: "boss-laziness",
+    title: "懒惰巨兽",
+    subtitle: "身体停住时，它就会醒来",
+    description: "本周完成 3 次安全运动，让身体重新成为你的同伴。",
+    mark: "懒",
+    domains: ["fitness"],
+    targetCount: 3,
+    minLevel: 2,
+  },
+  {
+    id: "boss-doubt",
+    title: "自我怀疑",
+    subtitle: "它最怕看得见的小成果",
+    description: "本周完成 3 次学习或创作行动，让能力给出证据。",
+    mark: "疑",
+    domains: ["learning", "creation"],
+    targetCount: 3,
+    minLevel: 3,
+  },
+  {
+    id: "boss-comfort",
+    title: "舒适圈",
+    subtitle: "边界之外，地图仍是迷雾",
+    description: "本周完成 3 次社交或探索行动，亲自走到旧边界之外。",
+    mark: "界",
+    domains: ["social", "exploration"],
+    targetCount: 3,
+    minLevel: 4,
+  },
+  {
+    id: "boss-temptation",
+    title: "诱惑之王",
+    subtitle: "它用即时满足交换长期目标",
+    description: "本周完成 4 次自律行动，把选择权重新拿回来。",
+    mark: "诱",
+    domains: ["discipline"],
+    targetCount: 4,
+    minLevel: 5,
+  },
+  {
+    id: "boss-fear",
+    title: "恐惧阴影",
+    subtitle: "行动之后，影子才会变小",
+    description: "本周完成 4 次挑战任务相关领域行动，证明你可以带着害怕前进。",
+    mark: "惧",
+    domains: ["social", "exploration", "creation"],
+    targetCount: 4,
+    minLevel: 6,
+  },
+];
+
+export const EQUIPMENT_CARDS: EquipmentCard[] = [
+  {
+    id: "wind-boots",
+    name: "疾风战靴",
+    rarity: "稀有",
+    description: "每一次真实迈步，都让远方更近。",
+    attribute: "力量 + 象征",
+    domain: "fitness",
+    unlockCount: 3,
+    unlockLevel: 1,
+    artIndex: 0,
+  },
+  {
+    id: "wisdom-crown",
+    name: "智慧王冠",
+    rarity: "史诗",
+    description: "答案不会自动出现，但理解会留下光。",
+    attribute: "智慧 + 象征",
+    domain: "learning",
+    unlockCount: 5,
+    unlockLevel: 3,
+    artIndex: 1,
+  },
+  {
+    id: "creation-quill",
+    name: "创世之笔",
+    rarity: "史诗",
+    description: "它只承认真正被带到现实里的作品。",
+    attribute: "创造 + 象征",
+    domain: "creation",
+    unlockCount: 5,
+    unlockLevel: 4,
+    artIndex: 2,
+  },
+  {
+    id: "steel-bracers",
+    name: "钢铁护腕",
+    rarity: "优秀",
+    description: "秩序不是束缚，而是守住重要之事的力量。",
+    attribute: "意志 + 象征",
+    domain: "discipline",
+    unlockCount: 3,
+    unlockLevel: 2,
+    artIndex: 3,
+  },
+  {
+    id: "resonance-brooch",
+    name: "共鸣徽记",
+    rarity: "稀有",
+    description: "真诚表达与认真倾听，让人与人彼此看见。",
+    attribute: "社交 + 象征",
+    domain: "social",
+    unlockCount: 3,
+    unlockLevel: 3,
+    artIndex: 4,
+  },
+  {
+    id: "dawn-compass",
+    name: "黎明罗盘",
+    rarity: "传说",
+    description: "方向不是被告知的，而是一步步探索出来的。",
+    attribute: "探索 + 象征",
+    domain: "exploration",
+    unlockCount: 5,
+    unlockLevel: 5,
+    artIndex: 5,
+  },
 ];
 
 export type RecoveryAction = {

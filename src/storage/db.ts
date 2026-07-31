@@ -30,6 +30,7 @@ export const createEmptyState = (): GameState => ({
   expeditions: [],
   courageLadders: [],
   campaigns: [],
+  bossVictories: [],
   actionContext: {
     minutes: 15,
     energy: "steady",
@@ -98,6 +99,7 @@ export const normalizeGame = (state: GameState): GameState => {
     expeditions: state.expeditions ?? [],
     courageLadders: state.courageLadders ?? [],
     campaigns: state.campaigns ?? [],
+    bossVictories: state.bossVictories ?? [],
     actionContext: state.actionContext ?? createEmptyState().actionContext,
     metrics: state.metrics ?? createEmptyState().metrics,
     lastModifiedAt:
